@@ -1,0 +1,6 @@
+pymongo
+fastapi
+uvicorn
+python-dotenv
+arq
+moviepy
