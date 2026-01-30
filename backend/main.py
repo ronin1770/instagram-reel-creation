@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 import os
 from pathlib import Path
+import shutil
 import subprocess
 from typing import Any, Dict, List
 from uuid import uuid4
@@ -12,7 +13,8 @@ from uuid import uuid4
 from arq import create_pool
 from arq.connections import RedisSettings
 from dotenv import find_dotenv, load_dotenv
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, File, HTTPException, UploadFile, status
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
@@ -31,6 +33,23 @@ logger = get_logger()
 
 load_dotenv(find_dotenv())
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+UPLOAD_FILES_LOCATION = os.getenv("UPLOAD_FILES_LOCATION", "./uploads")
+
+
+def _parse_origins(value: str) -> List[str]:
+    return [origin.strip() for origin in value.split(",") if origin.strip()]
+
+
+allowed_origins = _parse_origins(
+    os.getenv("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")
+)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=allowed_origins or ["*"],
+    allow_credentials=bool(allowed_origins),
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.on_event("startup")
@@ -106,6 +125,32 @@ def _validate_times(start_time: str, end_time: str, duration_seconds: float) -> 
         raise HTTPException(status_code=400, detail="end_time exceeds file duration")
     if end_seconds <= start_seconds:
         raise HTTPException(status_code=400, detail="end_time must be > start_time")
+
+
+@app.post("/uploads")
+def upload_video_file(file: UploadFile = File(...)) -> Dict[str, Any]:
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="file is required")
+    if file.content_type and not file.content_type.startswith("video/"):
+        raise HTTPException(status_code=400, detail="only video uploads are supported")
+
+    upload_dir = Path(UPLOAD_FILES_LOCATION)
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    ext = Path(file.filename).suffix
+    stored_name = f"{uuid4().hex}{ext}"
+    destination = upload_dir / stored_name
+
+    try:
+        with destination.open("wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+    finally:
+        file.file.close()
+
+    return {
+        "file_name": file.filename,
+        "stored_name": stored_name,
+        "file_location": str(destination.resolve()),
+    }
 
 
 @app.post("/videos", response_model=VideoSchema)

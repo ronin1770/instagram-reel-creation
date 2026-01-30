@@ -1,5 +1,6 @@
 pymongo
 fastapi
+python-multipart
 uvicorn
 python-dotenv
 arq
