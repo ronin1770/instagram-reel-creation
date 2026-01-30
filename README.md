@@ -67,7 +67,7 @@ MongoDB server is required for the `instagram_reel_creator` database.
 
 ## Environment
 
-Create `.env` in the repo root:
+Sample environment file exists in the repo's root location. Please rename **sample.env** to **.env**. 
 
 ```
 MONGODB_URI=mongodb://localhost:27017
@@ -75,6 +75,68 @@ LOG_LOCATION=./log/backend.log
 REDIS_URL=redis://localhost:6379/1
 OUTPUT_FILES_LOCATION=./outputs
 ```
+
+# Backend 
+
+## Backend technology
+
+- **Python 3.10+**: primary backend language and video-processing logic.
+- **FastAPI**: REST API framework in `backend/main.py`.
+- **Uvicorn**: ASGI server used to run FastAPI.
+- **MongoDB (pymongo)**: persistence for videos and video parts.
+- **Redis + ARQ**: background job queue for video processing.
+- **FFmpeg / FFprobe**: system binaries for media inspection and concatenation.
+- **MoviePy**: Python-level video trimming and processing in `backend/objects/video_automation.py`.
+
+## Why we selected this technology (rationale)
+
+- **Python** enables fast iteration and strong ecosystem support for media tooling.
+- **FastAPI** provides validation (Pydantic), async-friendly endpoints, and built-in OpenAPI docs.
+- **MongoDB** offers a flexible document model for video and video-part metadata.
+- **Redis + ARQ** keep long-running processing off the web request thread.
+- **FFmpeg/FFprobe** are the most reliable, widely supported CLI tools for media inspection and muxing.
+- **MoviePy** offers a Python-native API for clip trimming and effects while still using FFmpeg under the hood.
+
+## Key prerequisites (system + services)
+
+- **Python 3.10+**
+- **FFmpeg** (must include `ffprobe` and support `libx264`)
+- **MongoDB** server running (default `mongodb://localhost:27017`)
+- **Redis** server running (default `redis://localhost:6379/0`)
+- Sufficient disk space for uploads, temp segments, and output files.
+- Environment variables (see below) set in `.env`.
+
+### Required/expected environment variables
+
+- `MONGODB_URI` – MongoDB connection string.
+- `REDIS_URL` – Redis connection string.
+- `LOG_LOCATION` – log file path for the backend logger.
+- `UPLOAD_FILES_LOCATION` – filesystem path where uploads are stored (used by `/uploads`).
+- `OUTPUT_FILES_LOCATION` – filesystem path for final output files.
+- `INPUT_FILES_LOCATION` – base input directory used by `VideoAutomation`.
+
+## Key PyPI libraries
+
+- `fastapi` – API framework.
+- `uvicorn` – ASGI server.
+- `pymongo` – MongoDB driver.
+- `arq` – Redis-based background job queue.
+- `python-dotenv` – `.env` loading.
+- `python-multipart` – upload handling for `/uploads`.
+- `moviepy` – video trimming, effects, and export.
+- `pydantic` – request/response models (installed via FastAPI).
+- `typing-extensions` – used for `Annotated` in models (transitive dependency, but imported directly).
+
+## Requirements.txt status
+
+`requirements.txt` includes the core dependencies:
+`pymongo`, `fastapi`, `python-multipart`, `uvicorn`, `python-dotenv`, `arq`, `moviepy`.
+
+Additional libraries are used indirectly or imported directly:
+- `pydantic` (FastAPI dependency)
+- `typing-extensions` (imported in `video_part_model.py`)
+- `redis` (ARQ dependency)
+
 
 ## Run the API
 
@@ -190,3 +252,7 @@ Delete a video part:
 ```bash
 curl -X DELETE http://127.0.0.1:8000/video-parts/<video_parts_id>
 ```
+
+# Complete Backend API documentation
+
+Access Swagger documentations using: http://127.0.0.1:8000/docs (provided by FastAPI)
