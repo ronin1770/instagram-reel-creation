@@ -157,6 +157,11 @@ cd /usr/local/development/instagram-reel-creation
 arq backend.workers.video_maker.WorkerSettings
 ```
 
+
+### Complete Backend API documentation
+
+Access Swagger documentations using: http://127.0.0.1:8000/docs (provided by FastAPI)
+
 ## Sample cURL
 
 Create a video:
@@ -178,81 +183,68 @@ List videos:
 curl -X GET http://127.0.0.1:8000/videos
 ```
 
-Get a video by id:
 
-```bash
-curl -X GET http://127.0.0.1:8000/videos/<video_id>
-```
+# Frontend 
 
-Update a video:
+## Frontend technology
 
-```bash
-curl -X PATCH http://127.0.0.1:8000/videos/<video_id> \
-  -H "Content-Type: application/json" \
-  -d '{
-    "video_title": "Updated reel title",
-    "active": false
-  }'
-```
+- **Next.js 16 (App Router)** – React framework and routing in `frontend/app`.
+- **React 19** – UI rendering.
+- **TypeScript** – type safety in `.tsx` components.
+- **Tailwind CSS v4** – utility styling via `@import "tailwindcss";` in `frontend/app/globals.css`.
+- **Next/font (Google fonts)** – Space Grotesk and Oxanium loaded in `frontend/app/layout.tsx`.
+- **ESLint** – linting with `eslint-config-next`.
 
-Delete a video:
+## Why we selected this technology (rationale)
 
-```bash
-curl -X DELETE http://127.0.0.1:8000/videos/<video_id>
-```
+- **Next.js** provides fast local dev, built-in routing, image optimization, and production-ready builds.
+- **React** gives a composable UI model for the video workflow screens.
+- **TypeScript** reduces runtime errors in a state-heavy UI (file uploads, timelines, and queues).
+- **Tailwind** speeds up UI iteration and enables a consistent design system in CSS.
 
-Enqueue a video for processing:
+## Key prerequisites (system + tooling)
 
-```bash
-curl -X POST http://127.0.0.1:8000/videos/<video_id>/enqueue
-```
+- **Node.js (LTS recommended)** and **npm** (or pnpm/yarn/bun).
+- Backend API running and reachable (default `http://127.0.0.1:8000`).
+- A `.env` or local environment variable for `NEXT_PUBLIC_API_BASE_URL` if the backend is not local.
 
-Create a video part:
+### Required/expected environment variables
 
-```bash
-curl -X POST http://127.0.0.1:8000/video-parts \
-  -H "Content-Type: application/json" \
-  -d '{
-    "video_id": "<video_id_from_create>",
-    "file_part_name": "clip_01.mp4",
-    "part_number": 1,
-    "file_location": "/absolute/path/to/clip_01.mp4",
-    "start_time": "00:00:40",
-    "end_time": "00:00:50",
-    "selected_duration": 8.0,
-    "active": true
-  }'
-```
+- `NEXT_PUBLIC_API_BASE_URL` – base URL for the backend API.
+  - Default fallback in the code: `http://127.0.0.1:8000`.
 
-List video parts:
+## Key npm packages
 
-```bash
-curl -X GET http://127.0.0.1:8000/video-parts
-```
+Runtime dependencies in `frontend/package.json`:
+- `next`
+- `react`
+- `react-dom`
 
-Get a video part by id:
+Dev dependencies (tooling):
+- `typescript`
+- `eslint`, `eslint-config-next`
+- `tailwindcss`, `@tailwindcss/postcss`
+- `@types/node`, `@types/react`, `@types/react-dom`
 
-```bash
-curl -X GET http://127.0.0.1:8000/video-parts/<video_parts_id>
-```
+## package.json status
 
-Update a video part:
+`frontend/package.json` matches what is imported in the codebase:
+- Next.js/React/TypeScript are used directly.
+- Tailwind is configured via PostCSS and used in `globals.css`.
+- No additional runtime libraries are referenced in the UI code.
 
-```bash
-curl -X PATCH http://127.0.0.1:8000/video-parts/<video_parts_id> \
-  -H "Content-Type: application/json" \
-  -d '{
-    "file_part_name": "clip_01_trimmed.mp4",
-    "selected_duration": 7.5
-  }'
-```
+## Frontend routes and API calls
 
-Delete a video part:
+### Routes
 
-```bash
-curl -X DELETE http://127.0.0.1:8000/video-parts/<video_parts_id>
-```
+- `/` – marketing/overview page (`frontend/app/page.tsx`).
+- `/create_video` – reel creation workflow (`frontend/app/create_video/page.tsx`).
 
-# Complete Backend API documentation
+### API calls used by the frontend
 
-Access Swagger documentations using: http://127.0.0.1:8000/docs (provided by FastAPI)
+All API calls are made from `/create_video`:
+
+- `POST /uploads` – upload video files (multipart form).
+- `POST /videos` – create a video record.
+- `POST /video-parts` – create video parts for the reel.
+- `POST /videos/{video_id}/enqueue` – enqueue the video for background processing.
