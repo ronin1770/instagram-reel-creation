@@ -1,0 +1,16 @@
+[Unit]
+Description=Insta Reels Dev Stack (FastAPI + ARQ + Next.js)
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/usr/local/development/instagram-reel-creation
+ExecStart=/bin/bash /usr/local/development/instagram-reel-creation/backend/insta_reels_dev.sh
+Restart=on-failure
+RestartSec=3
+KillMode=control-group
+Environment=NODE_ENV=development
+
+[Install]
+WantedBy=multi-user.target
