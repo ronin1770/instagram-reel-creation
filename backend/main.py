@@ -335,6 +335,33 @@ async def enqueue_video(video_id: str) -> JSONResponse:
     )
 
 
+@app.post("/enque_posts")
+async def enqueue_posts() -> JSONResponse:
+    try:
+        redis = await create_pool(RedisSettings.from_dsn(REDIS_URL))
+    except Exception as exc:
+        logger.error("Unable to connect to Redis: %s", exc)
+        raise HTTPException(status_code=503, detail="redis unavailable") from exc
+
+    try:
+        job = await redis.enqueue_job("process_posts")
+    finally:
+        await redis.close()
+
+    if job is None:
+        raise HTTPException(status_code=500, detail="enqueue failed")
+
+    logger.info("Enqueued post worker as job %s", job.job_id)
+    return JSONResponse(
+        status_code=status.HTTP_202_ACCEPTED,
+        content={
+            "message": "post worker queued",
+            "job_id": job.job_id,
+            "status": "queued",
+        },
+    )
+
+
 @app.post("/video-parts", response_model=VideoPartSchema)
 def create_video_part(payload: VideoPartCreate) -> Dict[str, Any]:
     db = get_db()

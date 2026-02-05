@@ -9,6 +9,7 @@ Notes:
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 from pathlib import Path
@@ -61,6 +62,7 @@ class AiEngine:
             match = _VAR_LINE_RE.match(line)
             if match:
                 expected.append(match.group(1))
+        expected.extend(re.findall(r"<([A-Za-z0-9_]+)>", prompt_text))
         return expected
 
     @staticmethod
@@ -89,15 +91,33 @@ class AiEngine:
 
             updated_line = line
             for key, value in variables.items():
+                updated_line = updated_line.replace(f"<{key}>", str(value))
                 pattern = rf"\\b{re.escape(key)}\\b"
                 updated_line = re.sub(pattern, str(value), updated_line)
             rendered_lines.append(updated_line)
 
-        return "\n".join(rendered_lines)
+        rendered_prompt = "\n".join(rendered_lines)
+        unresolved = sorted(
+            set(re.findall(r"<([A-Za-z0-9_]+)>", rendered_prompt))
+        )
+        if unresolved:
+            unresolved_list = ", ".join(unresolved)
+            raise ValueError(f"Unresolved prompt tokens: {unresolved_list}")
 
-    def run_prompt(self, prompt_name: str, variables: Dict[str, str]) -> str:
+        return rendered_prompt
+
+    def run_prompt(
+        self,
+        prompt_name: str,
+        variables: Dict[str, str],
+        *,
+        logger: Optional[logging.Logger] = None,
+        log_rendered: bool = False,
+    ) -> str:
         prompt_text = self._load_prompt_text(prompt_name)
         rendered_prompt = self._render_prompt(prompt_text, variables)
+        if log_rendered and logger is not None:
+            logger.debug("Rendered prompt (%s): %s", prompt_name, rendered_prompt)
 
         if hasattr(self.llm, "invoke"):
             response = self.llm.invoke(rendered_prompt)
