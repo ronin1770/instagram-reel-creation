@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from uuid import uuid4
 from datetime import datetime
 from pathlib import Path
 from typing import List, Tuple
@@ -40,15 +41,37 @@ TAGLINE_SECTION_HEIGHT = 140
 class BaseImageCreator:
     """Prepare base portrait images using the supplied sketches and metadata."""
 
-    def __init__(self, env_path: str | Path = ".env") -> None:
+    def __init__(
+        self,
+        env_path: str | Path = ".env",
+        output_folder: str | Path | None = None,
+        sketch_folder: str | Path | None = None,
+    ) -> None:
         self.env_path = Path(env_path).resolve()
         self.logger = get_logger("instagram_post_creator.create_images")
         self._env_values = _load_env_file(self.env_path)
-        self.sketch_folder = self._resolve_folder(self._env_values.get("SKETCH_IMAGES_FOLDER"), "SKETCH_IMAGES_FOLDER")
-        self.output_folder = self._resolve_folder(self._env_values.get("OUTPUT_FOLDER"), "OUTPUT_FOLDER")
+        output_value = (
+            str(output_folder)
+            if output_folder is not None
+            else self._env_values.get("OUTPUT_FOLDER")
+            or self._env_values.get("OUTPUT_FILES_LOCATION")
+            or os.getenv("OUTPUT_FOLDER")
+            or os.getenv("OUTPUT_FILES_LOCATION")
+        )
+        self.output_folder = self._resolve_folder(output_value, "OUTPUT_FOLDER")
+
+        sketch_value = (
+            str(sketch_folder)
+            if sketch_folder is not None
+            else self._env_values.get("SKETCH_IMAGES_FOLDER") or os.getenv("SKETCH_IMAGES_FOLDER")
+        )
+        self.sketch_folder = self._resolve_optional_folder(sketch_value)
 
     def create_base_image(self, code: str, name: str, excellence_field: str, dob: str, country: str) -> Path:
         """Overlay the name, country, and DOB on top of the supplied sketch."""
+        if not self.sketch_folder:
+            raise ValueError("SKETCH_IMAGES_FOLDER is missing; cannot create base image.")
+
         sketch_path = self.sketch_folder / f"{code}.png"
         if not sketch_path.exists():
             raise FileNotFoundError(f"Sketch not found for code {code} at {sketch_path}")
@@ -122,6 +145,11 @@ class BaseImageCreator:
 
         folder_path.mkdir(parents=True, exist_ok=True)
         return folder_path
+
+    def _resolve_optional_folder(self, folder_value: str | None) -> Path | None:
+        if not folder_value:
+            return None
+        return self._resolve_folder(folder_value, "SKETCH_IMAGES_FOLDER")
 
 
 def _load_env_file(env_path: Path) -> dict[str, str]:
@@ -206,9 +234,9 @@ def _create_quote_image(code: str, name: str, quote_text: str, output_folder: Pa
         background=False,
     )
 
-    output_name = f"quote_{code}_{index}.png"
+    output_name = f"{uuid4()}.jpg"
     output_path = output_folder / output_name
-    image.save(output_path)
+    image.save(output_path, format="JPEG")
     return output_path
 
 

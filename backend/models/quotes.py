@@ -24,6 +24,7 @@ class QuoteModel:
     dob: str
     excellence_field: str
     quotes: str
+    quote_image_paths: str = ""
     added_on: str = field(default_factory=_now_str)
     updated_on: str = field(default_factory=_now_str)
 
@@ -35,6 +36,7 @@ class QuoteModel:
             "dob": self.dob,
             "excellence_field": self.excellence_field,
             "quotes": self.quotes,
+            "quote_image_paths": self.quote_image_paths,
             "added_on": self.added_on,
             "updated_on": self.updated_on,
         }
@@ -48,6 +50,7 @@ class QuoteModel:
             dob=doc.get("dob", ""),
             excellence_field=doc.get("excellence_field", ""),
             quotes=doc.get("quotes", ""),
+            quote_image_paths=doc.get("quote_image_paths", ""),
             added_on=doc.get("added_on", _now_str()),
             updated_on=doc.get("updated_on", _now_str()),
         )
@@ -60,6 +63,7 @@ class QuoteSchema(BaseModel):
     dob: str
     excellence_field: str
     quotes: str
+    quote_image_paths: str = ""
     added_on: str
     updated_on: str
 
@@ -72,6 +76,7 @@ class QuoteResponse(BaseModel):
     dob: str
     excellence_field: str
     quotes: str
+    quote_image_paths: str = ""
     added_on: str
     updated_on: str
 
@@ -87,6 +92,7 @@ class QuoteCreate(BaseModel):
     dob: constr(strip_whitespace=True, min_length=1)
     excellence_field: constr(strip_whitespace=True, min_length=1)
     quotes: constr(strip_whitespace=True, min_length=1)
+    quote_image_paths: Optional[constr(strip_whitespace=True, min_length=1)] = None
 
 
 class QuoteUpdate(BaseModel):
@@ -95,4 +101,5 @@ class QuoteUpdate(BaseModel):
     dob: Optional[constr(strip_whitespace=True, min_length=1)] = None
     excellence_field: Optional[constr(strip_whitespace=True, min_length=1)] = None
     quotes: Optional[constr(strip_whitespace=True, min_length=1)] = None
+    quote_image_paths: Optional[constr(strip_whitespace=True, min_length=1)] = None
     updated_on: Optional[str] = None

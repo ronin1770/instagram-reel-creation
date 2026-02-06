@@ -19,6 +19,7 @@ from backend.models.person_bio import PERSON_BIO_COLLECTION
 from backend.models.quotes import QUOTES_COLLECTION
 from backend.models.raw_posts_data import RAW_POSTS_COLLECTION
 from backend.objects.ai_engine import AiEngine
+from backend.objects.create_images import BaseImageCreator
 from backend.objects.prompt_constants import (
     AI_TYPE_PROMPT_MAP,
     AI_TYPE_REQUIRED_FIELDS,
@@ -208,7 +209,31 @@ def _build_quotes_document(
         "dob": fallback.get("dob", ""),
         "excellence_field": fallback.get("excellence_field", ""),
         "quotes": quotes,
+        "quote_image_paths": "",
     }
+
+
+def _create_quote_images(
+    code: str,
+    name: str,
+    quotes: str,
+    logger: logging.Logger,
+) -> str:
+    output_folder = (
+        os.getenv("OUTPUT_FILES_LOCATION")
+        or os.getenv("OUTPUT_FOLDER")
+        or "./output_files"
+    )
+
+    try:
+        creator = BaseImageCreator(output_folder=output_folder)
+    except Exception:
+        logger.exception("Failed to initialize image creator for code=%s", code)
+        raise
+
+    paths = creator.create_quotes_images(code=code, name=name, quotes=quotes)
+    resolved = [str(path.resolve()) for path in paths]
+    return " | ".join(resolved)
 
 
 def _upsert_document(
@@ -331,6 +356,25 @@ async def process_posts(ctx: Dict[str, Any]) -> bool:
                 failure += 1
                 continue
 
+            try:
+                image_paths = _create_quote_images(
+                    code=code,
+                    name=bio_doc.get("name", "") or raw.get("name", ""),
+                    quotes=quotes_doc["quotes"],
+                    logger=logger,
+                )
+            except Exception:
+                logger.exception("Failed to create quote images for code=%s", code)
+                failure += 1
+                continue
+
+            if not image_paths:
+                logger.error("No quote images created for code=%s", code)
+                failure += 1
+                continue
+
+            quotes_doc["quote_image_paths"] = image_paths
+
             _upsert_document(db, QUOTES_COLLECTION, code, quotes_doc, logger)
 
             _mark_raw_post_processed(db, raw.get("_id"), logger)
@@ -338,7 +382,17 @@ async def process_posts(ctx: Dict[str, Any]) -> bool:
 
             logger.info("Bio details for %s: %s", code, bio_doc)
             logger.info("Quotes for %s: %s", code, quotes_doc["quotes"])
-            print(json.dumps({"code": code, "bio_details": bio_doc, "quotes": quotes_doc["quotes"]}))
+            logger.info("Quote image paths for %s: %s", code, quotes_doc["quote_image_paths"])
+            print(
+                json.dumps(
+                    {
+                        "code": code,
+                        "bio_details": bio_doc,
+                        "quotes": quotes_doc["quotes"],
+                        "quote_image_paths": quotes_doc["quote_image_paths"],
+                    }
+                )
+            )
         except Exception:
             logger.exception("Failed to process code=%s", code)
             failure += 1

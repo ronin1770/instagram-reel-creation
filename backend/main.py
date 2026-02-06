@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
 from arq import create_pool
@@ -25,6 +25,8 @@ from pymongo.errors import DuplicateKeyError
 from db import get_db, init_db
 from logger import get_logger
 from objects.prompt_constants import AI_TYPE_PROMPT_MAP, AI_TYPE_REQUIRED_FIELDS, AI_TYPES
+from models.person_bio import PERSON_BIO_COLLECTION
+from models.quotes import QUOTES_COLLECTION
 from models.raw_posts_data import (
     RAW_POSTS_COLLECTION,
     RawPostsDataCreate,
@@ -70,6 +72,13 @@ def _serialize(doc: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _serialize_raw_post(doc: Dict[str, Any]) -> Dict[str, Any]:
+    doc = dict(doc)
+    if "_id" in doc:
+        doc["_id"] = str(doc["_id"])
+    return doc
+
+
+def _serialize_with_id(doc: Dict[str, Any]) -> Dict[str, Any]:
     doc = dict(doc)
     if "_id" in doc:
         doc["_id"] = str(doc["_id"])
@@ -576,3 +585,107 @@ def delete_monthly_figure(item_id: str) -> Dict[str, Any]:
     if doc is None:
         raise HTTPException(status_code=404, detail="monthly figure not found")
     return _serialize_raw_post(doc)
+
+
+def _get_codes_for_posted(db: Any, posted: bool) -> List[str]:
+    cursor = db[RAW_POSTS_COLLECTION].find(
+        {"posted": posted},
+        {"code": 1},
+    )
+    return [doc["code"] for doc in cursor if doc.get("code")]
+
+
+@app.get("/person-bio")
+def list_person_bio(
+    page: int = 1,
+    page_size: int = 20,
+    posted: Optional[bool] = None,
+) -> List[Dict[str, Any]]:
+    if page < 1 or page_size < 1:
+        raise HTTPException(
+            status_code=400, detail="page and page_size must be >= 1"
+        )
+
+    db = get_db()
+    skip = (page - 1) * page_size
+    query: Dict[str, Any] = {}
+    if posted is not None:
+        codes = _get_codes_for_posted(db, posted)
+        if not codes:
+            return []
+        query = {"code": {"$in": codes}}
+
+    cursor = (
+        db[PERSON_BIO_COLLECTION]
+        .find(query)
+        .sort("code", 1)
+        .skip(skip)
+        .limit(page_size)
+    )
+    return [_serialize_with_id(doc) for doc in cursor]
+
+
+@app.get("/person-bio/{code}")
+def get_person_bio(code: str) -> Dict[str, Any]:
+    db = get_db()
+    doc = db[PERSON_BIO_COLLECTION].find_one({"code": code})
+    if doc is None:
+        raise HTTPException(status_code=404, detail="person bio not found")
+    return _serialize_with_id(doc)
+
+
+@app.delete("/person-bio/{code}")
+def delete_person_bio(code: str) -> Dict[str, Any]:
+    db = get_db()
+    doc = db[PERSON_BIO_COLLECTION].find_one_and_delete({"code": code})
+    if doc is None:
+        raise HTTPException(status_code=404, detail="person bio not found")
+    return _serialize_with_id(doc)
+
+
+@app.get("/quotes")
+def list_quotes(
+    page: int = 1,
+    page_size: int = 20,
+    posted: Optional[bool] = None,
+) -> List[Dict[str, Any]]:
+    if page < 1 or page_size < 1:
+        raise HTTPException(
+            status_code=400, detail="page and page_size must be >= 1"
+        )
+
+    db = get_db()
+    skip = (page - 1) * page_size
+    query: Dict[str, Any] = {}
+    if posted is not None:
+        codes = _get_codes_for_posted(db, posted)
+        if not codes:
+            return []
+        query = {"code": {"$in": codes}}
+
+    cursor = (
+        db[QUOTES_COLLECTION]
+        .find(query)
+        .sort("code", 1)
+        .skip(skip)
+        .limit(page_size)
+    )
+    return [_serialize_with_id(doc) for doc in cursor]
+
+
+@app.get("/quotes/{code}")
+def get_quotes(code: str) -> Dict[str, Any]:
+    db = get_db()
+    doc = db[QUOTES_COLLECTION].find_one({"code": code})
+    if doc is None:
+        raise HTTPException(status_code=404, detail="quotes not found")
+    return _serialize_with_id(doc)
+
+
+@app.delete("/quotes/{code}")
+def delete_quotes(code: str) -> Dict[str, Any]:
+    db = get_db()
+    doc = db[QUOTES_COLLECTION].find_one_and_delete({"code": code})
+    if doc is None:
+        raise HTTPException(status_code=404, detail="quotes not found")
+    return _serialize_with_id(doc)
