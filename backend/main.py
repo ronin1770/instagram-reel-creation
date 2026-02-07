@@ -545,6 +545,30 @@ def list_monthly_figures(
     return [_serialize_raw_post(doc) for doc in cursor]
 
 
+@app.get("/raw_posts", response_model=List[RawPostsDataResponse])
+def list_raw_posts(
+    page: int = 1,
+    page_size: int = 20,
+    quote_created: Optional[bool] = None,
+    posted: Optional[bool] = None,
+) -> List[Dict[str, Any]]:
+    if page < 1 or page_size < 1:
+        raise HTTPException(
+            status_code=400, detail="page and page_size must be >= 1"
+        )
+
+    db = get_db()
+    skip = (page - 1) * page_size
+    query: Dict[str, Any] = {}
+    if quote_created is not None:
+        query["quote_created"] = quote_created
+    if posted is not None:
+        query["posted"] = posted
+
+    cursor = db[RAW_POSTS_COLLECTION].find(query).skip(skip).limit(page_size)
+    return [_serialize_raw_post(doc) for doc in cursor]
+
+
 @app.get("/monthly-figures/{item_id}", response_model=RawPostsDataResponse)
 def get_monthly_figure(item_id: str) -> Dict[str, Any]:
     db = get_db()
@@ -552,6 +576,23 @@ def get_monthly_figure(item_id: str) -> Dict[str, Any]:
     doc = db[RAW_POSTS_COLLECTION].find_one({"_id": oid})
     if doc is None:
         raise HTTPException(status_code=404, detail="monthly figure not found")
+    return _serialize_raw_post(doc)
+
+
+@app.get("/raw_posts/{code}", response_model=RawPostsDataResponse)
+def get_raw_post(code: str) -> Dict[str, Any]:
+    db = get_db()
+    doc = db[RAW_POSTS_COLLECTION].find_one({"code": code})
+    if doc is None:
+        try:
+            oid = _parse_object_id(code)
+        except HTTPException as exc:
+            raise HTTPException(
+                status_code=404, detail="raw post not found"
+            ) from exc
+        doc = db[RAW_POSTS_COLLECTION].find_one({"_id": oid})
+        if doc is None:
+            raise HTTPException(status_code=404, detail="raw post not found")
     return _serialize_raw_post(doc)
 
 
