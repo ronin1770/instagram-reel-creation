@@ -54,6 +54,18 @@ This repository was created to **automate and streamline the reel-creation workf
 
 ---
 
+## Latest Screenshots
+
+![Home](docs/img-1.png)
+
+![Create New Reel Interface](docs/img-2.png)
+
+![List of Videos](docs/img-3.png)
+
+![List of Quotes/Bios](docs/img-4.png)
+
+---
+
 ## 🗺️ Roadmap
 
 Planned features and enhancements include:
