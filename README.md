@@ -93,7 +93,7 @@ Sample environment file exists in the repo's root location. Please rename **samp
 
 ```
 MONGODB_URI=mongodb://localhost:27017
-LOG_LOCATION=./log/backend.log
+LOG_LOCATION=./llogs/reel_quick.log
 REDIS_URL=redis://localhost:6379/1
 OUTPUT_FILES_LOCATION=./outputs
 ```

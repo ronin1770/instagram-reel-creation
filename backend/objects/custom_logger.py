@@ -1,20 +1,10 @@
 import logging
 
+from backend.logger import get_logger as get_backend_logger
+
 
 def get_logger(name: str = "instagram_post_creator") -> logging.Logger:
-    """Return a console logger with the required timestamp format."""
-    logger = logging.getLogger(name)
-
-    if logger.handlers:
-        return logger
-
+    """Return a backend logger configured to write to the shared log file."""
+    logger = get_backend_logger(name=name)
     logger.setLevel(logging.INFO)
-
-    handler = logging.StreamHandler()
-    formatter = logging.Formatter(fmt="%(asctime)s - %(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
-    handler.setFormatter(formatter)
-    logger.addHandler(handler)
-
-    logger.propagate = False
-
     return logger

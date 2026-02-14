@@ -7,14 +7,15 @@ Inspiring leadership figures born in GIVEN_MONTH below
 - No holocaust
 - Provide a list at least 50 sorted by the date in ASC order
 - List fields include: code, name, country, DOB, excellence_field, challenges_faced
+- Code should be UUID4 - in order to be unique use the current timestamp to create UUID4
 - The header consisting of above fields MUST BE present
 ---
-GIVEN_MONTH: February
-FIELD_OF_EXCELLENCE: Sports
+GIVEN_MONTH: {{month}}
+FIELD_OF_EXCELLENCE: {{field_of_excellence}}
 
 ---
 
 ** OUTPUT_FORMAT **
 
 code, name, country, DOB, excellence_field, challenges_faced
-M001, John Doe, USA, 2025-01-01, Sports, Bord poor | Racial discrimination | Shy
+550e8400-e29b-41d4-a716-446655440000, John Doe, USA, 2025-01-01, Sports, Bord poor | Racial discrimination | Shy

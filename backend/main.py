@@ -15,7 +15,7 @@ from arq.connections import RedisSettings
 from bson import ObjectId
 from bson.errors import InvalidId
 from dotenv import find_dotenv, load_dotenv
-from fastapi import FastAPI, File, HTTPException, UploadFile, status
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
@@ -43,7 +43,7 @@ from models.video_part_model import (
 )
 
 app = FastAPI()
-logger = get_logger(log_path="./log/fastapi.log", name="instagram_reel_creation_fastapi")
+logger = get_logger(name="instagram_reel_creation_fastapi")
 
 load_dotenv(find_dotenv())
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
@@ -63,6 +63,21 @@ app.add_middleware(
 def on_startup() -> None:
     init_db()
     logger.info("Database initialized")
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(
+    request: Request, exc: Exception
+) -> JSONResponse:
+    logger.exception(
+        "Unhandled exception on %s %s",
+        request.method,
+        request.url.path,
+    )
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error"},
+    )
 
 
 def _serialize(doc: Dict[str, Any]) -> Dict[str, Any]:
@@ -226,15 +241,13 @@ def create_video(payload: VideoCreate) -> Dict[str, Any]:
 
 @app.get("/videos", response_model=List[VideoSchema])
 def list_videos() -> List[Dict[str, Any]]:
-    print(f"List Vides")
     try:
         db = get_db()
         docs = [_serialize(doc) for doc in db.videos.find({})]
         logger.info(f"Documents length: {len(docs)}\n{docs}")
         return docs
     except Exception as exc:
-        print(f"Exception is: {str(exc)}")
-        logger.info("Failed to list videos: %s", exc)
+        logger.exception("Failed to list videos")
         raise HTTPException(status_code=500, detail="Unable to list videos") from exc
 
 

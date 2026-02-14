@@ -28,8 +28,6 @@ from backend.objects.prompt_constants import (
 
 load_dotenv(find_dotenv())
 
-POST_WORKER_LOG_ENV = "POST_WORKER_LOG"
-DEFAULT_POST_WORKER_LOG = "./log/post_worker.log"
 _DATETIME_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 
@@ -38,11 +36,7 @@ def _now_str() -> str:
 
 
 def _get_worker_logger() -> logging.Logger:
-    log_path = os.getenv(POST_WORKER_LOG_ENV, DEFAULT_POST_WORKER_LOG)
-    logger = get_logger(
-        log_path=log_path,
-        name="instagram_reel_creation_post_worker",
-    )
+    logger = get_logger(name="instagram_reel_creation_post_worker")
     logger.setLevel(logging.DEBUG)
     return logger
 
@@ -383,7 +377,8 @@ async def process_posts(ctx: Dict[str, Any]) -> bool:
             logger.info("Bio details for %s: %s", code, bio_doc)
             logger.info("Quotes for %s: %s", code, quotes_doc["quotes"])
             logger.info("Quote image paths for %s: %s", code, quotes_doc["quote_image_paths"])
-            print(
+            logger.info(
+                "Processed raw post payload: %s",
                 json.dumps(
                     {
                         "code": code,
@@ -391,7 +386,7 @@ async def process_posts(ctx: Dict[str, Any]) -> bool:
                         "quotes": quotes_doc["quotes"],
                         "quote_image_paths": quotes_doc["quote_image_paths"],
                     }
-                )
+                ),
             )
         except Exception:
             logger.exception("Failed to process code=%s", code)

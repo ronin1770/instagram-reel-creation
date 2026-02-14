@@ -12,8 +12,7 @@ from moviepy import *
 #import numpy as np
 import json,sys,os,subprocess
 from config import *
-
-LOG_FOLDER = "./logs/"
+from backend.logger import get_logger
 
 
 class VideoAutomation:
@@ -21,13 +20,14 @@ class VideoAutomation:
     def __init__(self, input_json_file):
         self.input_json_file = input_json_file
         self.processing_data = {}
+        self.logger = get_logger(name="instagram_reel_creation_video_automation")
 
     #this method creates the output video
     def process_and_create_output(self):
         #check if processing_data is not {}
 
         if self.processing_data == {}:
-            print("Invalid Processing data in JSON File. Can't continue")
+            self.logger.error("Invalid processing data in JSON file. Can't continue.")
             return False
         
         try:
@@ -36,21 +36,23 @@ class VideoAutomation:
                 os.nice(10)
             except Exception:
                 pass
-            os.makedirs(LOG_FOLDER, exist_ok=True)
-            os.environ["FFREPORT"] = f"file={LOG_FOLDER}ffmpeg-%Y%m%d-%H%M%S.log:level=32"
 
             inputs      = self.processing_data["inputs"]
             durations   = self.processing_data["durations"]
             output_file = self.processing_data["output_file_name"]
 
-            print( f"{inputs}\n{durations}\n{output_file}\n++++++++++++\n")
+            self.logger.info(
+                "Processing video config. inputs=%s output=%s",
+                len(inputs),
+                output_file,
+            )
             
             # Resource-friendly settings
             target_width = 1440
             target_size = None
             target_fps = None
             ffmpeg_threads = 1
-            ffmpeg_params = ["-filter_threads", "1", "-filter_complex_threads", "1", "-report"]
+            ffmpeg_params = ["-filter_threads", "1", "-filter_complex_threads", "1"]
             drop_audio = True
 
             # Render each clip to a temp file to keep memory usage low
@@ -97,7 +99,7 @@ class VideoAutomation:
                 temp_files.append(temp_file)
 
             if not temp_files:
-                print("No clips were generated from the inputs.")
+                self.logger.error("No clips were generated from the inputs.")
                 return False
 
             # Concatenate using ffmpeg concat demuxer to avoid loading everything into RAM
@@ -111,7 +113,6 @@ class VideoAutomation:
             ffmpeg_cmd = [
                 "ffmpeg",
                 "-y",
-                "-report",
                 "-f", "concat",
                 "-safe", "0",
                 "-i", concat_list_path,
@@ -121,11 +122,10 @@ class VideoAutomation:
             ]
             result = subprocess.run(ffmpeg_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
             if result.returncode != 0:
-                print("ffmpeg concat failed. Falling back to re-encode for compatibility.")
+                self.logger.warning("ffmpeg concat failed. Falling back to re-encode.")
                 ffmpeg_cmd = [
                     "ffmpeg",
                     "-y",
-                    "-report",
                     "-f", "concat",
                     "-safe", "0",
                     "-i", concat_list_path,
@@ -137,12 +137,13 @@ class VideoAutomation:
                 ]
                 result = subprocess.run(ffmpeg_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
                 if result.returncode != 0:
-                    print(result.stderr)
+                    self.logger.error("ffmpeg re-encode failed: %s", result.stderr)
                     return False
             return True
 
         except Exception as e:
-            print(f"Exception in process_and_create_output: {str(e)}")
+            self.logger.exception("Exception in process_and_create_output: %s", str(e))
+            return False
         finally:
             # Cleanup temp files/segments and concat list
             for temp_file in temp_files if "temp_files" in locals() else []:
@@ -178,7 +179,7 @@ class VideoAutomation:
                 return  True
                 
         except Exception as e:
-            print( f"Exception is: {str(e)}")
+            self.logger.exception("Exception while reading video config: %s", str(e))
             return False
 
 """if __name__ == "__main__":

@@ -23,17 +23,9 @@ from backend.objects.prompt_constants import (
 
 load_dotenv(find_dotenv())
 
-AI_WORKER_LOG_ENV = "AI_WORKER_LOG"
-DEFAULT_AI_WORKER_LOG = "./log/arq.log"
-
-
 def _get_worker_logger() -> logging.Logger:
-    log_path = os.getenv(AI_WORKER_LOG_ENV, DEFAULT_AI_WORKER_LOG)
-    logger = get_logger(
-        log_path=log_path,
-        name="instagram_reel_creation_ai_arq",
-    )
-    logger.setLevel(logging.DEBUG)
+    logger = get_logger(name="instagram_reel_creation_ai_arq")
+    logger.setLevel(logging.INFO)
     return logger
 
 
@@ -64,13 +56,13 @@ def _parse_monthly_figures(
     skipped_lines = 0
     parse_failures = 0
 
-    logger.debug(
+    logger.info(
         "Parsing monthly figures output: chars=%s lines=%s",
         len(output),
         output.count("\n") + 1 if output else 0,
     )
 
-    for raw_line in output.splitlines():
+    for line_no, raw_line in enumerate(output.splitlines(), start=1):
         total_lines += 1
         line = _normalize_line(raw_line)
         if not line:
@@ -80,7 +72,7 @@ def _parse_monthly_figures(
         if not found_header:
             if _looks_like_header(line):
                 found_header = True
-                logger.debug("Detected header line for monthly figures.")
+                logger.info("Detected header line for monthly figures.")
             else:
                 skipped_lines += 1
             continue
@@ -90,17 +82,35 @@ def _parse_monthly_figures(
             continue
         if "," not in line:
             skipped_lines += 1
+            logger.warning(
+                "Skipped monthly figures row at line=%s reason=no_comma line=%r",
+                line_no,
+                raw_line,
+            )
             continue
 
         parts = [part.strip() for part in line.split(",")]
         if len(parts) < 6:
             parse_failures += 1
+            logger.warning(
+                "Skipped monthly figures row at line=%s reason=insufficient_columns count=%s line=%r",
+                line_no,
+                len(parts),
+                raw_line,
+            )
             continue
 
         code, name, country, dob, excellence_field = parts[:5]
         challenges_faced = ", ".join(parts[5:]).strip()
         if not code or not name:
             parse_failures += 1
+            logger.warning(
+                "Skipped monthly figures row at line=%s reason=missing_code_or_name code=%r name=%r line=%r",
+                line_no,
+                code,
+                name,
+                raw_line,
+            )
             continue
 
         rows.append(
@@ -114,7 +124,7 @@ def _parse_monthly_figures(
             )
         )
 
-    logger.debug(
+    logger.info(
         "Monthly figures parse summary: header_found=%s total_lines=%s rows=%s skipped=%s failures=%s",
         found_header,
         total_lines,
@@ -132,14 +142,18 @@ def _insert_raw_posts(
     db = get_db()
     inserted = 0
     skipped = 0
-    logger.debug("Inserting raw posts rows: count=%s", len(rows))
+    logger.info("Inserting raw posts rows: count=%s", len(rows))
     for row in rows:
         try:
             db[RAW_POSTS_COLLECTION].insert_one(row.to_bson())
             inserted += 1
         except DuplicateKeyError:
             skipped += 1
-    logger.debug(
+            logger.warning(
+                "Skipped raw post insert due to duplicate code=%s",
+                row.code,
+            )
+    logger.info(
         "Raw posts insert summary: inserted=%s skipped=%s total=%s",
         inserted,
         skipped,
@@ -154,17 +168,17 @@ def _build_prompt_variables(
     mapping = AI_TYPE_VARIABLE_MAP.get(ai_type, {})
     variables: Dict[str, Any] = {}
     if not mapping:
-        logger.debug("No variable mapping found for ai_type=%s", ai_type)
+        logger.info("No variable mapping found for ai_type=%s", ai_type)
     for input_key, prompt_key in mapping.items():
         if input_key in input_payload:
             variables[prompt_key] = input_payload[input_key]
         else:
-            logger.debug(
+            logger.info(
                 "Missing input for variable mapping: %s -> %s",
                 input_key,
                 prompt_key,
             )
-    logger.debug(
+    logger.info(
         "Built prompt variables for ai_type=%s: keys=%s",
         ai_type,
         ", ".join(sorted(variables.keys())) if variables else "none",
@@ -190,13 +204,13 @@ async def process_ai_task(
         )
         return False
 
-    logger.debug(
+    logger.info(
         "Input payload keys: %s",
         ", ".join(sorted(input_payload.keys())) if input_payload else "none",
     )
 
     required = AI_TYPE_REQUIRED_FIELDS.get(ai_type, [])
-    logger.debug(
+    logger.info(
         "Required fields for ai_type=%s: %s",
         ai_type,
         ", ".join(required) if required else "none",
@@ -218,9 +232,9 @@ async def process_ai_task(
         engine = AiEngine()
         output = engine.run_prompt(prompt_name, variables)
     except Exception:
-        logger.exception("AI engine failed for %s", ai_type)
+        logger.info("AI engine failed for %s", ai_type)
         return False
-    logger.debug(
+    logger.info(
         "Prompt output summary: chars=%s lines=%s",
         len(output),
         output.count("\n") + 1 if output else 0,

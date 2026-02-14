@@ -109,6 +109,12 @@ export default function ProminentFiguresList() {
           </div>
         </div>
           <div className="mt-6 flex flex-wrap items-center gap-3">
+            <Link
+              className="neon-button neon-button-primary"
+              href="/prominent_figures/monthly_figures"
+            >
+              New Monthly Figures
+            </Link>
             <button
               className="neon-button neon-button-ghost"
               type="button"

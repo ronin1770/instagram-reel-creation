@@ -24,6 +24,7 @@ except Exception:  # pragma: no cover - fallback for older langchain installs
 
 
 _VAR_LINE_RE = re.compile(r"^\s*([A-Z][A-Z0-9_]+)\s*:\s*(.*)$")
+_MUSTACHE_VAR_RE = re.compile(r"{{\s*([A-Za-z0-9_]+)\s*}}")
 
 
 class AiEngine:
@@ -80,6 +81,24 @@ class AiEngine:
                 missing_list = ", ".join(sorted(missing))
                 raise ValueError(f"Missing variables: {missing_list}")
 
+        alias_variables: Dict[str, str] = {}
+        for line in prompt_text.splitlines():
+            match = _VAR_LINE_RE.match(line)
+            if not match:
+                continue
+            key, value_template = match.groups()
+            if key not in variables:
+                continue
+            for alias in _MUSTACHE_VAR_RE.findall(value_template):
+                alias_variables[alias] = str(variables[key])
+
+        merged_variables: Dict[str, str] = {
+            key: str(value) for key, value in variables.items()
+        }
+        for alias_key, alias_value in alias_variables.items():
+            merged_variables.setdefault(alias_key, alias_value)
+            merged_variables.setdefault(alias_key.upper(), alias_value)
+
         rendered_lines = []
         for line in prompt_text.splitlines():
             match = _VAR_LINE_RE.match(line)
@@ -90,10 +109,22 @@ class AiEngine:
                 continue
 
             updated_line = line
-            for key, value in variables.items():
-                updated_line = updated_line.replace(f"<{key}>", str(value))
-                pattern = rf"\\b{re.escape(key)}\\b"
-                updated_line = re.sub(pattern, str(value), updated_line)
+            for key, value in merged_variables.items():
+                str_value = str(value)
+                key_lower = key.lower()
+                updated_line = updated_line.replace(f"<{key}>", str_value)
+                updated_line = re.sub(
+                    rf"{{{{\s*{re.escape(key)}\s*}}}}",
+                    str_value,
+                    updated_line,
+                )
+                updated_line = re.sub(
+                    rf"{{{{\s*{re.escape(key_lower)}\s*}}}}",
+                    str_value,
+                    updated_line,
+                )
+                pattern = rf"\b{re.escape(key)}\b"
+                updated_line = re.sub(pattern, str_value, updated_line)
             rendered_lines.append(updated_line)
 
         rendered_prompt = "\n".join(rendered_lines)
