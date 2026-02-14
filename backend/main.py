@@ -15,7 +15,7 @@ from arq.connections import RedisSettings
 from bson import ObjectId
 from bson.errors import InvalidId
 from dotenv import find_dotenv, load_dotenv
-from fastapi import FastAPI, File, HTTPException, Request, UploadFile, status
+from fastapi import FastAPI, File, HTTPException, Request, Response, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
@@ -41,6 +41,12 @@ from models.video_part_model import (
     VideoPartSchema,
     VideoPartUpdate,
 )
+from workers.queue_names import (
+    AI_QUEUE_NAME,
+    POST_QUEUE_NAME,
+    VIDEO_QUEUE_NAME,
+    queue_health_key,
+)
 
 app = FastAPI()
 logger = get_logger(name="instagram_reel_creation_fastapi")
@@ -56,6 +62,7 @@ app.add_middleware(
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["X-Total-Count"],
 )
 
 
@@ -180,6 +187,25 @@ def _validate_times(start_time: str, end_time: str, duration_seconds: float) -> 
         raise HTTPException(status_code=400, detail="end_time exceeds file duration")
     if end_seconds <= start_seconds:
         raise HTTPException(status_code=400, detail="end_time must be > start_time")
+
+
+async def _require_worker_health(
+    redis: Any, queue_name: str, worker_label: str
+) -> None:
+    health_key = queue_health_key(queue_name)
+    health_data = await redis.get(health_key)
+    if health_data:
+        return
+    logger.error(
+        "%s worker is unavailable. Missing health key=%s queue=%s",
+        worker_label,
+        health_key,
+        queue_name,
+    )
+    raise HTTPException(
+        status_code=503,
+        detail=f"{worker_label} worker unavailable",
+    )
 
 
 @app.post("/uploads")
@@ -322,7 +348,16 @@ async def enqueue_video(video_id: str) -> JSONResponse:
         raise HTTPException(status_code=503, detail="redis unavailable") from exc
 
     try:
-        job = await redis.enqueue_job("process_video", video_id)
+        await _require_worker_health(
+            redis,
+            VIDEO_QUEUE_NAME,
+            "video",
+        )
+        job = await redis.enqueue_job(
+            "process_video",
+            video_id,
+            _queue_name=VIDEO_QUEUE_NAME,
+        )
     finally:
         await redis.close()
 
@@ -366,7 +401,15 @@ async def enqueue_posts() -> JSONResponse:
         raise HTTPException(status_code=503, detail="redis unavailable") from exc
 
     try:
-        job = await redis.enqueue_job("process_posts")
+        await _require_worker_health(
+            redis,
+            POST_QUEUE_NAME,
+            "post",
+        )
+        job = await redis.enqueue_job(
+            "process_posts",
+            _queue_name=POST_QUEUE_NAME,
+        )
     finally:
         await redis.close()
 
@@ -498,7 +541,17 @@ async def call_api(payload: CallApiRequest) -> JSONResponse:
         raise HTTPException(status_code=503, detail="redis unavailable") from exc
 
     try:
-        job = await redis.enqueue_job("process_ai_task", ai_type, payload.input)
+        await _require_worker_health(
+            redis,
+            AI_QUEUE_NAME,
+            "ai",
+        )
+        job = await redis.enqueue_job(
+            "process_ai_task",
+            ai_type,
+            payload.input,
+            _queue_name=AI_QUEUE_NAME,
+        )
     finally:
         await redis.close()
 
@@ -545,7 +598,7 @@ def create_monthly_figures(payload: RawPostsDataCreate) -> Dict[str, Any]:
 
 @app.get("/monthly-figures", response_model=List[RawPostsDataResponse])
 def list_monthly_figures(
-    page: int = 1, page_size: int = 20
+    response: Response, page: int = 1, page_size: int = 20
 ) -> List[Dict[str, Any]]:
     if page < 1 or page_size < 1:
         raise HTTPException(
@@ -553,6 +606,8 @@ def list_monthly_figures(
         )
 
     db = get_db()
+    total_count = db[RAW_POSTS_COLLECTION].count_documents({})
+    response.headers["X-Total-Count"] = str(total_count)
     skip = (page - 1) * page_size
     cursor = db[RAW_POSTS_COLLECTION].find({}).skip(skip).limit(page_size)
     return [_serialize_raw_post(doc) for doc in cursor]
@@ -560,6 +615,7 @@ def list_monthly_figures(
 
 @app.get("/raw_posts", response_model=List[RawPostsDataResponse])
 def list_raw_posts(
+    response: Response,
     page: int = 1,
     page_size: int = 20,
     quote_created: Optional[bool] = None,
@@ -578,6 +634,8 @@ def list_raw_posts(
     if posted is not None:
         query["posted"] = posted
 
+    total_count = db[RAW_POSTS_COLLECTION].count_documents(query)
+    response.headers["X-Total-Count"] = str(total_count)
     cursor = db[RAW_POSTS_COLLECTION].find(query).skip(skip).limit(page_size)
     return [_serialize_raw_post(doc) for doc in cursor]
 

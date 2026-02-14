@@ -28,6 +28,7 @@ type RawPostRecord = {
 
 const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000";
+const PAGE_SIZE = 20;
 
 const MONTHS = [
   "January",
@@ -91,16 +92,18 @@ export default function MonthlyFiguresCreator() {
   const [jobResult, setJobResult] = useState<CallApiSuccess | null>(null);
 
   const [records, setRecords] = useState<RawPostRecord[]>([]);
+  const [page, setPage] = useState(1);
+  const [totalRecords, setTotalRecords] = useState(0);
   const [isLoadingRecords, setIsLoadingRecords] = useState(true);
   const [recordsError, setRecordsError] = useState<string | null>(null);
 
-  const fetchMonthlyFigures = useCallback(async () => {
+  const fetchMonthlyFigures = useCallback(async (pageToLoad: number) => {
     setIsLoadingRecords(true);
     setRecordsError(null);
     try {
       const url = new URL("/monthly-figures", API_BASE);
-      url.searchParams.set("page", "1");
-      url.searchParams.set("page_size", "20");
+      url.searchParams.set("page", String(pageToLoad));
+      url.searchParams.set("page_size", String(PAGE_SIZE));
 
       const response = await fetch(url.toString(), { cache: "no-store" });
       if (!response.ok) {
@@ -109,7 +112,13 @@ export default function MonthlyFiguresCreator() {
         );
       }
       const data = (await response.json()) as RawPostRecord[];
+      const totalCountHeader = response.headers.get("x-total-count");
+      const parsedTotal = totalCountHeader
+        ? Number.parseInt(totalCountHeader, 10)
+        : Number.NaN;
       setRecords(Array.isArray(data) ? data : []);
+      setTotalRecords(Number.isFinite(parsedTotal) ? parsedTotal : data.length);
+      setPage(pageToLoad);
     } catch (error) {
       setRecordsError(
         error instanceof Error
@@ -122,7 +131,7 @@ export default function MonthlyFiguresCreator() {
   }, []);
 
   useEffect(() => {
-    fetchMonthlyFigures();
+    fetchMonthlyFigures(1);
   }, [fetchMonthlyFigures]);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -160,7 +169,7 @@ export default function MonthlyFiguresCreator() {
       const data = (await response.json()) as CallApiSuccess;
       setJobResult(data);
       setStatusMessage("Monthly figures job queued. Pull data to see updates.");
-      await fetchMonthlyFigures();
+      await fetchMonthlyFigures(1);
     } catch (error) {
       setSubmitError(
         error instanceof Error
@@ -171,6 +180,10 @@ export default function MonthlyFiguresCreator() {
       setIsSubmitting(false);
     }
   };
+
+  const totalPages = Math.max(1, Math.ceil(totalRecords / PAGE_SIZE));
+  const canGoPrev = page > 1;
+  const canGoNext = page < totalPages;
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-10">
@@ -224,7 +237,7 @@ export default function MonthlyFiguresCreator() {
             <button
               className="neon-button neon-button-ghost"
               type="button"
-              onClick={fetchMonthlyFigures}
+              onClick={() => fetchMonthlyFigures(page)}
               disabled={isLoadingRecords}
             >
               {isLoadingRecords ? "Pulling..." : "Pull Latest Figures"}
@@ -264,7 +277,9 @@ export default function MonthlyFiguresCreator() {
               Latest records from backend monthly figures endpoint.
             </p>
           </div>
-          <p className="text-xs text-muted">{records.length} record(s)</p>
+          <p className="text-xs text-muted">
+            {records.length} of {totalRecords} record(s)
+          </p>
         </div>
 
         {recordsError && (
@@ -317,6 +332,30 @@ export default function MonthlyFiguresCreator() {
               </tbody>
             </table>
           )}
+        </div>
+
+        <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
+          <p className="text-xs text-muted">
+            Page {page} of {totalPages}
+          </p>
+          <div className="flex items-center gap-3">
+            <button
+              className="neon-button neon-button-ghost"
+              type="button"
+              onClick={() => fetchMonthlyFigures(page - 1)}
+              disabled={!canGoPrev || isLoadingRecords}
+            >
+              Prev
+            </button>
+            <button
+              className="neon-button neon-button-ghost"
+              type="button"
+              onClick={() => fetchMonthlyFigures(page + 1)}
+              disabled={!canGoNext || isLoadingRecords}
+            >
+              Next
+            </button>
+          </div>
         </div>
       </section>
     </div>

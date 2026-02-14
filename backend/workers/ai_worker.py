@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Tuple
 
 from arq.connections import RedisSettings
 from dotenv import find_dotenv, load_dotenv
-from pymongo.infos import DuplicateKeyError
+from pymongo.errors import DuplicateKeyError
 
 from backend.db import get_db
 from backend.logger import get_logger
@@ -20,6 +20,7 @@ from backend.objects.prompt_constants import (
     AI_TYPE_REQUIRED_FIELDS,
     AI_TYPE_VARIABLE_MAP,
 )
+from backend.workers.queue_names import AI_QUEUE_NAME
 
 load_dotenv(find_dotenv())
 
@@ -260,6 +261,7 @@ async def process_ai_task(
 
 class WorkerSettings:
     functions = [process_ai_task]
+    queue_name = AI_QUEUE_NAME
     redis_settings = RedisSettings.from_dsn(
         os.getenv("REDIS_URL", "redis://localhost:6379/0")
     )

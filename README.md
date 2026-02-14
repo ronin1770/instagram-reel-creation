@@ -38,14 +38,26 @@ This repository was created to **automate and streamline the reel-creation workf
 
 ## 🚧 Current Status
 
+*Update - Feb 14 2026*
+- Consolidated backend logging to a single file: reel_quick.log for FastAPI + workers + backend modules.
+- Updated logger infrastructure to use one shared file handler and integrated uvicorn/arq logs into the same log target.
+- Rewired all worker/API loggers to remove per-process log files (fastapi.log, arq.log, post_worker.log) and use the shared logger.
+- Updated environment/docs defaults for logging path (reel_quick.log), and verified log file creation with a smoke test.
+- Improved API error logging with a global FastAPI exception handler and removed stray print(...) paths in key backend flows.
+- Reviewed and fixed prompt variable rendering for monthly_figures.txt so month/field placeholders are reliably injected before AI submission (supports plain tokens + {{...}} placeholders).
+- Added detailed skip diagnostics in AI monthly-figures parsing: logs now include skipped line number, reason, and raw content.
+- Added duplicate-insert skip logging for monthly figures (logs duplicate code values).
+- Fixed worker startup stability issues, including a blocking import bug in AI worker (pymongo.infos -> pymongo.errors).
+- Improved queue reliability by assigning dedicated ARQ queues per worker (ai, video, post) and enqueueing to the correct queue explicitly.
+- Added worker health checks in enqueue endpoints, so API now returns 503 when a required worker is unavailable instead of returning misleading 202 queued.
+- Updated insta_reels_dev.sh to start all workers (including post_worker) and hardened process lifecycle handling.
+- Fixed insta_reels.service paths to point to the correct repo (/usr/local/development/reel-quick) so systemd runs the current script/code.
+- Added pagination support with total counts for Monthly Figures UI (/monthly-figures) and Prominent Figures UI (/raw_posts), including Prev/Next controls and “shown vs total” display.
+
 *Update - Feb 07 2026*
 - Added FASTAPI endpoints for getting raw data for Posts and quotes
 - Added FASTAPI endpoint for enqueue jobs to call AI engine
 
-*Update - Feb 05 2026*
-- Added modules to handle AI related tasks
-- Added models for holding raw data and post data
-- Added worker to call AI engine / model using LLM
 
 * 🚧 **Frontend to display prominent figures and quotes** — Progressing
 * ✅ **Backend API (FastAPI)** — completed

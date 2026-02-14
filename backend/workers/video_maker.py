@@ -16,6 +16,7 @@ from dotenv import find_dotenv, load_dotenv
 from backend.db import get_db
 from backend.logger import get_logger
 from backend.objects.video_automation import VideoAutomation
+from backend.workers.queue_names import VIDEO_QUEUE_NAME
 
 load_dotenv(find_dotenv())
 
@@ -224,6 +225,7 @@ async def process_video(ctx: Dict[str, Any], video_id: str) -> bool:
 
 class WorkerSettings:
     functions = [process_video]
+    queue_name = VIDEO_QUEUE_NAME
     redis_settings = RedisSettings.from_dsn(
         os.getenv("REDIS_URL", "redis://localhost:6379/0")
     )

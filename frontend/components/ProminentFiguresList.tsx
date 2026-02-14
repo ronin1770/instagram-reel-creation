@@ -19,9 +19,12 @@ type ProminentFigure = {
 
 const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000";
+const PAGE_SIZE = 20;
 
-const buildRawPostsUrl = (quoteCreated: QuoteFilter) => {
+const buildRawPostsUrl = (quoteCreated: QuoteFilter, page: number) => {
   const url = new URL("/raw_posts", API_BASE);
+  url.searchParams.set("page", String(page));
+  url.searchParams.set("page_size", String(PAGE_SIZE));
   if (quoteCreated === "created") {
     url.searchParams.set("quote_created", "true");
   } else if (quoteCreated === "pending") {
@@ -49,23 +52,31 @@ type QuoteFilter = "all" | "created" | "pending";
 
 export default function ProminentFiguresList() {
   const [figures, setFigures] = useState<ProminentFigure[]>([]);
+  const [page, setPage] = useState(1);
+  const [totalRecords, setTotalRecords] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [quoteFilter, setQuoteFilter] = useState<QuoteFilter>("created");
 
-  const fetchFigures = useCallback(async () => {
+  const fetchFigures = useCallback(async (pageToLoad: number) => {
     setIsLoading(true);
     setError(null);
 
     try {
-      const response = await fetch(buildRawPostsUrl(quoteFilter), {
+      const response = await fetch(buildRawPostsUrl(quoteFilter, pageToLoad), {
         cache: "no-store",
       });
       if (!response.ok) {
         throw new Error(`Unable to load prominent figures (${response.status})`);
       }
       const data = (await response.json()) as ProminentFigure[];
+      const totalCountHeader = response.headers.get("x-total-count");
+      const parsedTotal = totalCountHeader
+        ? Number.parseInt(totalCountHeader, 10)
+        : Number.NaN;
       setFigures(Array.isArray(data) ? data : []);
+      setTotalRecords(Number.isFinite(parsedTotal) ? parsedTotal : data.length);
+      setPage(pageToLoad);
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Unable to load prominent figures."
@@ -76,18 +87,22 @@ export default function ProminentFiguresList() {
   }, [quoteFilter]);
 
   useEffect(() => {
-    fetchFigures();
-  }, [fetchFigures]);
+    fetchFigures(1);
+  }, [fetchFigures, quoteFilter]);
 
   const stats = useMemo(() => {
     const postedCount = figures.filter((item) => item.posted).length;
     const readyCount = figures.filter((item) => item.quote_created).length;
     return {
-      total: figures.length,
+      total: totalRecords,
       posted: postedCount,
       ready: readyCount,
     };
-  }, [figures]);
+  }, [figures, totalRecords]);
+
+  const totalPages = Math.max(1, Math.ceil(totalRecords / PAGE_SIZE));
+  const canGoPrev = page > 1;
+  const canGoNext = page < totalPages;
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-10">
@@ -118,7 +133,7 @@ export default function ProminentFiguresList() {
             <button
               className="neon-button neon-button-ghost"
               type="button"
-              onClick={fetchFigures}
+              onClick={() => fetchFigures(page)}
               disabled={isLoading}
             >
               {isLoading ? "Refreshing..." : "Refresh"}
@@ -161,6 +176,8 @@ export default function ProminentFiguresList() {
               : quoteFilter === "pending"
                 ? "Showing figures waiting on quotes."
                 : "Showing all figures."}
+            {" "}
+            ({figures.length} of {totalRecords})
           </div>
         </div>
 
@@ -226,6 +243,30 @@ export default function ProminentFiguresList() {
               </tbody>
             </table>
           )}
+        </div>
+
+        <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
+          <p className="text-xs text-muted">
+            Page {page} of {totalPages}
+          </p>
+          <div className="flex items-center gap-3">
+            <button
+              className="neon-button neon-button-ghost"
+              type="button"
+              onClick={() => fetchFigures(page - 1)}
+              disabled={!canGoPrev || isLoading}
+            >
+              Prev
+            </button>
+            <button
+              className="neon-button neon-button-ghost"
+              type="button"
+              onClick={() => fetchFigures(page + 1)}
+              disabled={!canGoNext || isLoading}
+            >
+              Next
+            </button>
+          </div>
         </div>
       </section>
     </div>

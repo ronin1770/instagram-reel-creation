@@ -25,6 +25,7 @@ from backend.objects.prompt_constants import (
     AI_TYPE_REQUIRED_FIELDS,
     AI_TYPE_VARIABLE_MAP,
 )
+from backend.workers.queue_names import POST_QUEUE_NAME
 
 load_dotenv(find_dotenv())
 
@@ -37,7 +38,7 @@ def _now_str() -> str:
 
 def _get_worker_logger() -> logging.Logger:
     logger = get_logger(name="instagram_reel_creation_post_worker")
-    logger.setLevel(logging.info)
+    logger.setLevel(logging.INFO)
     return logger
 
 
@@ -406,6 +407,7 @@ async def process_posts(ctx: Dict[str, Any]) -> bool:
 
 class WorkerSettings:
     functions = [process_posts]
+    queue_name = POST_QUEUE_NAME
     redis_settings = RedisSettings.from_dsn(
-        os.getenv("REDIS_URL", "redis://localhost:6379/1")
+        os.getenv("REDIS_URL", "redis://localhost:6379/0")
     )
