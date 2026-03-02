@@ -38,6 +38,13 @@ This repository was created to **automate and streamline the reel-creation workf
 
 ## 🚧 Current Status
 
+*Update - Mar 2 2026*
+- Added page for displaying personalities
+- Improve the UI for personality page
+- It allows you to copy bio to be pasted in automation tool
+- It displays the quotations
+- It provide a mechansims to keep track which quotations have been pushed to automation tool
+
 *Update - Feb 14 2026*
 - Consolidated backend logging to a single file: reel_quick.log for FastAPI + workers + backend modules.
 - Updated logger infrastructure to use one shared file handler and integrated uvicorn/arq logs into the same log target.
@@ -76,15 +83,18 @@ This repository was created to **automate and streamline the reel-creation workf
 
 ![List of Quotes/Bios](docs/img-4.png)
 
+![Page for listing personalities and quotes](docs/img-5.png)
+
 ---
 
 ## 🗺️ Roadmap
 
 Planned features and enhancements include:
 
+* Mechanism to create custom voice by uploading a sample voice clip
 * Bulk video creation from a single directory or input path
-* Support for **image-based posts** (static Instagram content)
-* GPT-powered text generation for Instagram image posts (via API key)
+* ~~Support for **image-based posts** (static Instagram content)~~  **DONE**
+* ~~GPT-powered text generation for Instagram image posts (via API key)~~ **DONE**
 * Custom video transitions and effects between scenes
 * In-browser image editing tools (crop, rotate, annotate, filters)
 * Webhook support for automation and external integrations
