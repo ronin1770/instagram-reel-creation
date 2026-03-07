@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO_ROOT="/usr/local/development/reel-quick"
+REPO_ROOT="/home/farhan/reel-quick/"
 
 cd "$REPO_ROOT"
 source "$REPO_ROOT/ig_venv/bin/activate"
