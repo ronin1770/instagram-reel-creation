@@ -36,6 +36,65 @@ This repository was created to **automate and streamline the reel-creation workf
 
 ---
 
+## Prerequisite Software Installation
+
+### Backend Installation
+
+1. Install mongodb
+
+```
+sudo apt update
+sudo apt install -y curl gnupg
+
+# Import the GPG key
+curl -fsSL https://www.mongodb.org/static/pgp/server-8.0.asc | \
+   sudo gpg -o /usr/share/keyrings/mongodb-server-8.0.gpg \
+   --dearmor
+# Add the repo to the list
+
+echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-8.0.gpg ] https://repo.mongodb.org/apt/ubuntu noble/mongodb-org/8.0 multiverse" | sudo tee /etc/apt/sources.list.d/mongodb-org-8.0.list
+
+sudo apt update
+sudo apt install -y mongodb-org
+
+# Start the mongo service
+
+sudo systemctl start mongod
+
+# Login into Mongo Using the following command:
+
+mongosh
+
+```
+
+2. Install Redis
+Install the Redis Server using the following command:
+
+```
+sudo apt install -y redis-server
+
+# Confirm installation using the following command:
+
+redis-cli
+
+```
+
+### Frontend Installation
+
+1. Install the NodeJS
+
+```
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
+
+source ~/.bashrc
+
+nvm list-remote
+
+nvm install lts/krypton
+```
+
+---
+
 ## 🚧 Current Status
 
 *Update - Mar 2 2026*
