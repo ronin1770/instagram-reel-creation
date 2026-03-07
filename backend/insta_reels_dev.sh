@@ -4,7 +4,7 @@ set -euo pipefail
 REPO_ROOT="/home/farhan/reel-quick/"
 
 cd "$REPO_ROOT"
-source "$REPO_ROOT/ig_venv/bin/activate"
+source "/home/farhan/renv/bin/activate"
 
 NODE_BIN="/root/.nvm/versions/node/v24.13.0/bin"
 export PATH="$NODE_BIN:/usr/bin:/usr/local/bin"
