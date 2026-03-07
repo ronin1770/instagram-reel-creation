@@ -7,6 +7,7 @@ from arq.constants import health_check_key_suffix
 VIDEO_QUEUE_NAME = "arq:queue:video"
 AI_QUEUE_NAME = "arq:queue:ai"
 POST_QUEUE_NAME = "arq:queue:post"
+VOICE_CLONE_QUEUE_NAME = "arq:queue:voice_clone"
 
 
 def queue_health_key(queue_name: str) -> str:

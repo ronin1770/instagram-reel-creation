@@ -36,6 +36,7 @@ from models.raw_posts_data import (
     _now_str,
 )
 from models.video_model import VideoCreate, VideoSchema, VideoUpdate
+from models.voice_job_status import VOICE_CLONE_JOB_COLLECTION, VoiceCloneJobModel
 from models.video_part_model import (
     VideoPartCreate,
     VideoPartSchema,
@@ -45,6 +46,7 @@ from workers.queue_names import (
     AI_QUEUE_NAME,
     POST_QUEUE_NAME,
     VIDEO_QUEUE_NAME,
+    VOICE_CLONE_QUEUE_NAME,
     queue_health_key,
 )
 
@@ -123,6 +125,17 @@ class CallApiResponse(BaseModel):
     message: str
     ai_type: str
     job_id: str
+    status: str
+
+
+class VoiceCloneEnqueueRequest(BaseModel):
+    ref_audio_path: str = Field(..., min_length=1)
+    ref_text: str = Field(..., min_length=1)
+
+
+class VoiceCloneEnqueueResponse(BaseModel):
+    message: str
+    voice_clone_job_id: str
     status: str
 
 
@@ -422,6 +435,128 @@ async def enqueue_posts() -> JSONResponse:
         content={
             "message": "post worker queued",
             "job_id": job.job_id,
+            "status": "queued",
+        },
+    )
+
+
+@app.post("/voice-clones/enqueue", response_model=VoiceCloneEnqueueResponse)
+async def enqueue_voice_clone(payload: VoiceCloneEnqueueRequest) -> JSONResponse:
+    db = get_db()
+    now = datetime.utcnow()
+    voice_clone_job_id = uuid4().hex
+
+    ref_audio_path = payload.ref_audio_path.strip()
+    ref_text = payload.ref_text.strip()
+    if not ref_audio_path:
+        raise HTTPException(status_code=400, detail="ref_audio_path is required")
+    if not ref_text:
+        raise HTTPException(status_code=400, detail="ref_text is required")
+
+    path = Path(ref_audio_path)
+    if not path.exists():
+        raise HTTPException(status_code=400, detail="ref_audio_path not found")
+    if path.suffix.lower() != ".wav":
+        raise HTTPException(status_code=400, detail="ref_audio_path must be a .wav file")
+
+    doc = VoiceCloneJobModel(
+        job_id=voice_clone_job_id,
+        ref_audio_path=ref_audio_path,
+        ref_text=ref_text,
+        status="queued",
+        progress=0.0,
+        result_path=None,
+        error_reason=None,
+        created_at=now,
+        started_at=None,
+        completed_at=None,
+        updated_at=now,
+    ).to_bson()
+
+    try:
+        db[VOICE_CLONE_JOB_COLLECTION].insert_one(doc)
+    except DuplicateKeyError as exc:
+        logger.error("Duplicate job_id on voice clone insert: %s", exc)
+        raise HTTPException(status_code=409, detail="job_id already exists") from exc
+
+    try:
+        redis = await create_pool(RedisSettings.from_dsn(REDIS_URL))
+    except Exception as exc:
+        db[VOICE_CLONE_JOB_COLLECTION].update_one(
+            {"job_id": voice_clone_job_id},
+            {
+                "$set": {
+                    "status": "failed",
+                    "error_reason": "redis unavailable",
+                    "updated_at": datetime.utcnow(),
+                }
+            },
+        )
+        logger.error("Unable to connect to Redis: %s", exc)
+        raise HTTPException(status_code=503, detail="redis unavailable") from exc
+
+    try:
+        await _require_worker_health(
+            redis,
+            VOICE_CLONE_QUEUE_NAME,
+            "voice clone",
+        )
+        job = await redis.enqueue_job(
+            "process_voice_clone_job",
+            voice_clone_job_id,
+            _queue_name=VOICE_CLONE_QUEUE_NAME,
+        )
+    except HTTPException:
+        db[VOICE_CLONE_JOB_COLLECTION].update_one(
+            {"job_id": voice_clone_job_id},
+            {
+                "$set": {
+                    "status": "failed",
+                    "error_reason": "voice clone worker unavailable",
+                    "updated_at": datetime.utcnow(),
+                }
+            },
+        )
+        raise
+    except Exception as exc:
+        db[VOICE_CLONE_JOB_COLLECTION].update_one(
+            {"job_id": voice_clone_job_id},
+            {
+                "$set": {
+                    "status": "failed",
+                    "error_reason": "enqueue failed",
+                    "updated_at": datetime.utcnow(),
+                }
+            },
+        )
+        logger.error("Failed to enqueue voice clone job: %s", exc)
+        raise HTTPException(status_code=500, detail="enqueue failed") from exc
+    finally:
+        await redis.close()
+
+    if job is None:
+        db[VOICE_CLONE_JOB_COLLECTION].update_one(
+            {"job_id": voice_clone_job_id},
+            {
+                "$set": {
+                    "status": "failed",
+                    "error_reason": "enqueue failed",
+                    "updated_at": datetime.utcnow(),
+                }
+            },
+        )
+        raise HTTPException(status_code=500, detail="enqueue failed")
+
+    logger.info(
+        "Enqueued voice clone job %s as arq job %s",
+        voice_clone_job_id,
+        job.job_id,
+    )
+    return JSONResponse(
+        status_code=status.HTTP_202_ACCEPTED,
+        content={
+            "message": "voice clone job queued",
+            "voice_clone_job_id": voice_clone_job_id,
             "status": "queued",
         },
     )
