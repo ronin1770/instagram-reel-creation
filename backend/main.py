@@ -17,7 +17,7 @@ from bson.errors import InvalidId
 from dotenv import find_dotenv, load_dotenv
 from fastapi import FastAPI, File, HTTPException, Request, Response, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
@@ -225,8 +225,14 @@ async def _require_worker_health(
 def upload_video_file(file: UploadFile = File(...)) -> Dict[str, Any]:
     if not file.filename:
         raise HTTPException(status_code=400, detail="file is required")
-    if file.content_type and not file.content_type.startswith("video/"):
-        raise HTTPException(status_code=400, detail="only video uploads are supported")
+    if file.content_type and not (
+        file.content_type.startswith("video/")
+        or file.content_type.startswith("audio/")
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="only video or audio uploads are supported",
+        )
 
     upload_dir = Path(UPLOAD_FILES_LOCATION)
     upload_dir.mkdir(parents=True, exist_ok=True)
@@ -559,6 +565,68 @@ async def enqueue_voice_clone(payload: VoiceCloneEnqueueRequest) -> JSONResponse
             "voice_clone_job_id": voice_clone_job_id,
             "status": "queued",
         },
+    )
+
+
+@app.get("/voice-clones")
+def list_voice_clones(
+    response: Response, page: int = 1, page_size: int = 10
+) -> List[Dict[str, Any]]:
+    if page < 1 or page_size < 1:
+        raise HTTPException(
+            status_code=400, detail="page and page_size must be >= 1"
+        )
+
+    db = get_db()
+    total_count = db[VOICE_CLONE_JOB_COLLECTION].count_documents({})
+    response.headers["X-Total-Count"] = str(total_count)
+    skip = (page - 1) * page_size
+    cursor = (
+        db[VOICE_CLONE_JOB_COLLECTION]
+        .find({}, {"_id": 0})
+        .sort("updated_at", -1)
+        .skip(skip)
+        .limit(page_size)
+    )
+    return [dict(doc) for doc in cursor]
+
+
+@app.get("/voice-clones/{voice_clone_job_id}")
+def get_voice_clone(voice_clone_job_id: str) -> Dict[str, Any]:
+    db = get_db()
+    doc = db[VOICE_CLONE_JOB_COLLECTION].find_one(
+        {"job_id": voice_clone_job_id},
+        {"_id": 0},
+    )
+    if doc is None:
+        raise HTTPException(status_code=404, detail="voice clone job not found")
+    return dict(doc)
+
+
+@app.get("/voice-clones/{voice_clone_job_id}/download")
+def download_voice_clone(voice_clone_job_id: str) -> FileResponse:
+    db = get_db()
+    doc = db[VOICE_CLONE_JOB_COLLECTION].find_one(
+        {"job_id": voice_clone_job_id},
+        {"_id": 0},
+    )
+    if doc is None:
+        raise HTTPException(status_code=404, detail="voice clone job not found")
+    if doc.get("status") != "completed":
+        raise HTTPException(status_code=409, detail="voice clone is not completed yet")
+
+    result_path = str(doc.get("result_path") or "").strip()
+    if not result_path:
+        raise HTTPException(status_code=404, detail="output file not available")
+
+    output_path = Path(result_path)
+    if not output_path.exists():
+        raise HTTPException(status_code=404, detail="output file not found")
+
+    return FileResponse(
+        path=output_path,
+        media_type="audio/wav",
+        filename=f"{voice_clone_job_id}.wav",
     )
 
 
