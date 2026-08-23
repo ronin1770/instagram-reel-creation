@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Oxanium, Space_Grotesk } from "next/font/google";
 import Image from "next/image";
 import Link from "next/link";
+import AppNavigation from "@/components/AppNavigation";
 import ThemeScript from "@/components/ThemeScript";
 import ThemeSelector from "@/components/ThemeSelector";
 import "./globals.css";
@@ -57,32 +58,7 @@ export default function RootLayout({
                   width={220}
                 />
               </Link>
-              <nav className="app-nav">
-                <Link className="app-nav__link" href="/">
-                  Home
-                </Link>
-                <Link className="app-nav__link" href="/create_video">
-                  Create
-                </Link>
-                <Link className="app-nav__link" href="/posts">
-                  Posts
-                </Link>
-                <Link className="app-nav__link" href="/videos">
-                  Videos
-                </Link>
-                <Link className="app-nav__link" href="/voice-cloner">
-                  Voice Cloner
-                </Link>
-                <Link className="app-nav__link" href="/sound-designer">
-                  Sound Designer
-                </Link>
-                <Link className="app-nav__link" href="/custom-voices">
-                  Custom Voices
-                </Link>
-                <Link className="app-nav__link" href="/control-panel">
-                  Control Panel
-                </Link>
-              </nav>
+              <AppNavigation />
               <div className="app-header__actions">
                 <ThemeSelector />
                 <Link
