@@ -339,6 +339,11 @@ body {
   color: var(--text-high);
 }
 
+.app-nav__link--active {
+  color: var(--text-high);
+  text-shadow: 0 0 14px var(--neon-cyan);
+}
+
 .app-header__actions {
   display: flex;
   align-items: center;
