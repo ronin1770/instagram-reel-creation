@@ -51,7 +51,10 @@ def _now_utc() -> datetime:
 
 
 def _get_worker_logger() -> logging.Logger:
-    logger = get_logger(name="instagram_reel_creation_voice_clone_arq")
+    logger = get_logger(
+        name="instagram_reel_creation_voice_clone_arq",
+        service="voice_cloner",
+    )
     logger.setLevel(logging.INFO)
     return logger
 

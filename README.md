@@ -486,11 +486,13 @@ curl -X GET http://127.0.0.1:8000/videos
 - **Node.js (LTS recommended)** and **npm** (or pnpm/yarn/bun).
 - Backend API running and reachable (default `http://127.0.0.1:8000`).
 - A `.env` or local environment variable for `NEXT_PUBLIC_API_BASE_URL` if the backend is not local.
+- `LOG_API_KEY` in the Next.js server environment to proxy the protected application-log endpoints.
 
 ### Required/expected environment variables
 
 - `NEXT_PUBLIC_API_BASE_URL` – base URL for the backend API.
   - Default fallback in the code: `http://127.0.0.1:8000`.
+- `LOG_API_KEY` – server-only API key forwarded by the log proxy to FastAPI.
 
 ## Key npm packages
 

@@ -10,6 +10,8 @@ from typing import Dict, Optional
 
 from dotenv import find_dotenv, load_dotenv
 
+from backend.system_logging import RedisStreamHandler
+
 LOG_ENV_VAR = "LOG_LOCATION"
 DEFAULT_LOG_PATH = "./llogs/reel_quick.log"
 LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s: %(message)s"
@@ -23,6 +25,7 @@ INTEGRATION_LOGGERS = (
 
 _loggers: Dict[str, logging.Logger] = {}
 _handlers: Dict[str, logging.FileHandler] = {}
+_stream_handlers: Dict[str, RedisStreamHandler] = {}
 _lock = Lock()
 
 
@@ -56,6 +59,15 @@ def _attach_handler(logger: logging.Logger, handler: logging.FileHandler) -> Non
         logger.addHandler(handler)
 
 
+def _attach_stream_handler(logger: logging.Logger, service: str) -> None:
+    handler = _stream_handlers.get(service)
+    if handler is None:
+        handler = RedisStreamHandler(service=service)
+        _stream_handlers[service] = handler
+    if not any(existing is handler for existing in logger.handlers):
+        logger.addHandler(handler)
+
+
 def _configure_integrations(handler: logging.FileHandler) -> None:
     for logger_name in INTEGRATION_LOGGERS:
         integration_logger = logging.getLogger(logger_name)
@@ -66,6 +78,7 @@ def _configure_integrations(handler: logging.FileHandler) -> None:
 def get_logger(
     log_path: Optional[str] = None,
     name: str = "instagram_reel_creation",
+    service: str = "backend",
 ) -> logging.Logger:
     """Return a logger configured with a file handler."""
     path = _resolve_path(log_path)
@@ -79,6 +92,7 @@ def get_logger(
         logger = logging.getLogger(name)
         logger.setLevel(logging.INFO)
         _attach_handler(logger, handler)
+        _attach_stream_handler(logger, service)
         _configure_integrations(handler)
 
         _loggers[cache_key] = logger

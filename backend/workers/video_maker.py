@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-import json, subprocess
+import json
+import logging
 import os
 import re
+import subprocess
 import tempfile
 from datetime import datetime
 from pathlib import Path
@@ -103,7 +105,13 @@ def _build_processing_payload(
 
 
 async def process_video(ctx: Dict[str, Any], video_id: str) -> bool:
-    logger = get_logger(name="instagram_reel_creation_arq")
+    logger = logging.LoggerAdapter(
+        get_logger(
+            name="instagram_reel_creation_arq",
+            service="video_maker",
+        ),
+        {"video_id": video_id},
+    )
     db = get_db()
 
     video = db.videos.find_one({"video_id": video_id})

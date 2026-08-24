@@ -37,7 +37,10 @@ def _now_str() -> str:
 
 
 def _get_worker_logger() -> logging.Logger:
-    logger = get_logger(name="instagram_reel_creation_post_worker")
+    logger = get_logger(
+        name="instagram_reel_creation_post_worker",
+        service="post_worker",
+    )
     logger.setLevel(logging.INFO)
     return logger
 
