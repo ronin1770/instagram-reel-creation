@@ -4,6 +4,7 @@ python-multipart
 uvicorn
 python-dotenv
 arq
+redis
 moviepy
 langchain-openai
 openai

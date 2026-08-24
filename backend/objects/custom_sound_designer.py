@@ -33,7 +33,10 @@ class CustomSoundDesigner:
     _OUTPUT_DIR_ENV = "SOUND_DESIGNER_FILES"
     _OUTPUT_DIR_FALLBACK = "./sound_designer_files/"
 
-    _logger = get_logger(name="instagram_reel_creation_custom_sound_designer")
+    _logger = get_logger(
+        name="instagram_reel_creation_custom_sound_designer",
+        service="sound_designer",
+    )
 
     @classmethod
     def create_sound(
@@ -252,4 +255,3 @@ class CustomSoundDesigner:
         finally:
             if temp_wav_path.exists():
                 temp_wav_path.unlink(missing_ok=True)
-

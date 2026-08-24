@@ -25,7 +25,10 @@ from backend.workers.queue_names import AI_QUEUE_NAME
 load_dotenv(find_dotenv())
 
 def _get_worker_logger() -> logging.Logger:
-    logger = get_logger(name="instagram_reel_creation_ai_arq")
+    logger = get_logger(
+        name="instagram_reel_creation_ai_arq",
+        service="ai_worker",
+    )
     logger.setLevel(logging.INFO)
     return logger
 

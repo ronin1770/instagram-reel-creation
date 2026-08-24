@@ -24,7 +24,10 @@ class VideoAutomation:
     def __init__(self, input_json_file):
         self.input_json_file = input_json_file
         self.processing_data = {}
-        self.logger = get_logger(name="instagram_reel_creation_video_automation")
+        self.logger = get_logger(
+            name="instagram_reel_creation_video_automation",
+            service="video_maker",
+        )
 
     def _normalize_clip_size(self, clip, target_size):
         target_width, target_height = (int(target_size[0]), int(target_size[1]))

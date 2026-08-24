@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import date, datetime
 from enum import Enum
 import json
 import os
 from pathlib import Path
+import secrets
 import shutil
 import signal
 import subprocess
@@ -21,18 +23,30 @@ from arq.connections import RedisSettings
 from bson import ObjectId
 from bson.errors import InvalidId
 from dotenv import find_dotenv, load_dotenv
-from fastapi import FastAPI, File, HTTPException, Request, Response, UploadFile, status
+from fastapi import (
+    Depends,
+    FastAPI,
+    File,
+    Header,
+    HTTPException,
+    Query,
+    Request,
+    Response,
+    UploadFile,
+    status,
+)
 from fastapi.encoders import jsonable_encoder
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field, ValidationError
 from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
 from backend.db import get_db, init_db
 from backend.logger import get_logger
+from backend.system_logging import get_recent_log_events, read_log_events
 from backend.models.available_transition import (
     AVAILABLE_TRANSITIONS_COLLECTION,
     AvailableTransitionCreate,
@@ -159,6 +173,20 @@ logger = get_logger(name="instagram_reel_creation_fastapi")
 load_dotenv(find_dotenv())
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 UPLOAD_FILES_LOCATION = os.getenv("UPLOAD_FILES_LOCATION", "./uploads")
+LOG_API_KEY_ENV_VAR = "LOG_API_KEY"
+LOG_HISTORY_DEFAULT_LIMIT = 100
+LOG_HISTORY_MAX_LIMIT = 500
+
+
+def _require_log_api_key(
+    x_log_api_key: Optional[str] = Header(default=None),
+) -> None:
+    expected_key = os.getenv(LOG_API_KEY_ENV_VAR)
+    if not expected_key:
+        logger.error("Log API access is unavailable because LOG_API_KEY is not configured")
+        raise HTTPException(status_code=503, detail="Log service is unavailable")
+    if not x_log_api_key or not secrets.compare_digest(x_log_api_key, expected_key):
+        raise HTTPException(status_code=401, detail="Invalid log API key")
 
 
 app.add_middleware(
@@ -169,6 +197,15 @@ app.add_middleware(
     allow_headers=["*"],
     expose_headers=["X-Total-Count"],
 )
+
+
+@app.middleware("http")
+async def add_request_id(request: Request, call_next: Any) -> Response:
+    request_id = request.headers.get("X-Request-ID") or str(uuid4())
+    request.state.request_id = request_id
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = request_id
+    return response
 
 
 @app.on_event("startup")
@@ -186,6 +223,7 @@ async def unhandled_exception_handler(
         "Unhandled exception on %s %s",
         request.method,
         request.url.path,
+        extra={"request_id": getattr(request.state, "request_id", None)},
     )
     return JSONResponse(
         status_code=500,
@@ -197,6 +235,8 @@ VOICE_DESIGN_ROUTE = "/api/v1/voice-design/"
 VOICE_DESIGN_PRESETS_ROUTE = "/api/v1/voice-design/presets"
 CONTROL_PANEL_WORKERS_ROUTE = "/api/v1/control-panel/workers"
 CONTROL_PANEL_ERROR_LOG_ROUTE = "/api/v1/control-panel/error-log"
+APPLICATION_LOGS_ROUTE = "/api/logs"
+APPLICATION_LOG_STREAM_ROUTE = "/api/logs/stream"
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CONTROL_PANEL_RUNTIME_DIR_RAW = Path(
     os.getenv("CONTROL_PANEL_RUNTIME_DIR", "./llogs/control_panel")
@@ -256,6 +296,66 @@ class WorkerControlActionResponse(BaseModel):
 
 class WorkerErrorLogResponse(BaseModel):
     logs: List[str] = Field(default_factory=list)
+
+
+class ApplicationLogHistoryResponse(BaseModel):
+    logs: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+@app.get(APPLICATION_LOGS_ROUTE, response_model=ApplicationLogHistoryResponse)
+def get_application_logs(
+    limit: int = Query(
+        default=LOG_HISTORY_DEFAULT_LIMIT,
+        ge=1,
+        le=LOG_HISTORY_MAX_LIMIT,
+    ),
+    _: None = Depends(_require_log_api_key),
+) -> ApplicationLogHistoryResponse:
+    try:
+        return ApplicationLogHistoryResponse(logs=get_recent_log_events(limit))
+    except Exception:
+        logger.exception("Unable to load application log history")
+        raise HTTPException(status_code=503, detail="Log service is unavailable")
+
+
+@app.get(APPLICATION_LOG_STREAM_ROUTE)
+async def stream_application_logs(
+    request: Request,
+    last_event_id: Optional[str] = Query(default=None),
+    last_event_id_header: Optional[str] = Header(default=None, alias="Last-Event-ID"),
+    _: None = Depends(_require_log_api_key),
+) -> StreamingResponse:
+    cursor = last_event_id or last_event_id_header or "$"
+
+    async def event_stream() -> Any:
+        nonlocal cursor
+        while not await request.is_disconnected():
+            try:
+                events = await asyncio.to_thread(read_log_events, cursor)
+            except Exception:
+                logger.exception("Application log stream temporarily lost Redis access")
+                yield "event: error\ndata: {\"detail\":\"Log stream temporarily unavailable\"}\n\n"
+                await asyncio.sleep(3)
+                continue
+
+            if not events:
+                yield ": keepalive\n\n"
+                continue
+
+            for event in events:
+                cursor = str(event["id"])
+                data = json.dumps(event, separators=(",", ":"))
+                yield f"id: {cursor}\nevent: log\ndata: {data}\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 class WorkerProcessManager:

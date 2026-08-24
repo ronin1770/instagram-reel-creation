@@ -1,302 +1,256 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { startTransition, useEffect, useEffectEvent, useRef, useState } from "react";
 
-type WorkerStatus = {
-  key: string;
-  name: string;
-  settings_path: string;
-  running: boolean;
-  pid: number | null;
-  started_at: string | null;
-};
+type LogLevel = "DEBUG" | "INFO" | "WARNING" | "ERROR" | "CRITICAL";
 
-type WorkersListResponse = {
-  workers: WorkerStatus[];
-};
-
-type WorkerActionResponse = {
+type LogEvent = {
+  id: string;
+  timestamp: string;
+  level: LogLevel;
+  service: string;
+  source: string;
+  environment: string;
   message: string;
-  worker: WorkerStatus;
+  exception?: string;
+  job_id?: string;
+  video_id?: string;
+  request_id?: string;
 };
 
-type WorkerErrorLogResponse = {
-  logs: string[];
+type LogHistoryResponse = {
+  logs: LogEvent[];
 };
 
-const API_BASE_ENV = process.env.NEXT_PUBLIC_API_BASE_URL?.trim();
+const MAX_VISIBLE_LOGS = 500;
+const levelOptions: Array<LogLevel | "ALL"> = [
+  "ALL",
+  "DEBUG",
+  "INFO",
+  "WARNING",
+  "ERROR",
+  "CRITICAL",
+];
+const serviceOptions = [
+  "ALL",
+  "backend",
+  "frontend",
+  "video_maker",
+  "text_overlay",
+  "ai_worker",
+  "post_worker",
+  "voice_cloner",
+  "sound_designer",
+];
 
-const resolveApiBase = () => {
-  if (API_BASE_ENV) {
-    return API_BASE_ENV;
-  }
-  return "http://127.0.0.1:8000";
+const formatTimestamp = (timestamp: string) => {
+  const parsed = new Date(timestamp);
+  if (Number.isNaN(parsed.getTime())) return timestamp;
+  return parsed.toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
 };
 
-const parseJsonSafely = async <T,>(response: Response): Promise<T | null> => {
+const formatService = (service: string) =>
+  service
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+
+const parseResponse = async (response: Response) => {
   try {
-    return (await response.json()) as T;
+    return (await response.json()) as LogHistoryResponse & { detail?: string };
   } catch {
     return null;
   }
 };
 
-const parseErrorDetail = (payload: unknown) => {
-  if (!payload || typeof payload !== "object" || !("detail" in payload)) {
-    return null;
-  }
-  const detail = (payload as { detail?: unknown }).detail;
-  if (typeof detail === "string" && detail.trim()) {
-    return detail;
-  }
-  return null;
+const mergeLogs = (previous: LogEvent[], incoming: LogEvent[]) => {
+  const events = new Map(previous.map((event) => [event.id, event]));
+  incoming.forEach((event) => events.set(event.id, event));
+  return [...events.values()]
+    .sort((first, second) => second.id.localeCompare(first.id, undefined, { numeric: true }))
+    .slice(0, MAX_VISIBLE_LOGS);
 };
 
-const formatStartedAt = (startedAt: string | null) => {
-  if (!startedAt) {
-    return "N/A";
-  }
-  const parsed = new Date(startedAt);
-  if (Number.isNaN(parsed.getTime())) {
-    return startedAt;
-  }
-  return parsed.toLocaleString();
+const levelClassName = (level: LogLevel) => {
+  if (level === "ERROR" || level === "CRITICAL") return "text-status-error";
+  if (level === "WARNING") return "text-status-warning";
+  if (level === "INFO") return "text-status-success";
+  return "text-soft";
 };
 
 export default function WorkerControlPanel() {
-  const apiBase = useMemo(resolveApiBase, []);
-  const [workers, setWorkers] = useState<WorkerStatus[]>([]);
-  const [logs, setLogs] = useState<string[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [feedback, setFeedback] = useState<string | null>(null);
+  const [logs, setLogs] = useState<LogEvent[]>([]);
+  const [levelFilter, setLevelFilter] = useState<LogLevel | "ALL">("ALL");
+  const [serviceFilter, setServiceFilter] = useState("ALL");
+  const [isLoading, setIsLoading] = useState(true);
+  const [streamStatus, setStreamStatus] = useState("Connecting");
   const [error, setError] = useState<string | null>(null);
-  const [busyWorkers, setBusyWorkers] = useState<Record<string, boolean>>({});
+  const lastEventId = useRef<string | null>(null);
 
-  const fetchWorkers = useCallback(
-    async (silent = false) => {
-      if (!silent) {
-        setRefreshing(true);
-      }
+  const appendEvents = useEffectEvent((incoming: LogEvent[]) => {
+    if (incoming.length === 0) return;
+    lastEventId.current = incoming.at(-1)?.id ?? lastEventId.current;
+    startTransition(() => {
+      setLogs((previous) => mergeLogs(previous, incoming));
+    });
+  });
 
-      try {
-        const response = await fetch(`${apiBase}/api/v1/control-panel/workers`, {
-          cache: "no-store",
-        });
-        const payload = await parseJsonSafely<WorkersListResponse>(response);
-
-        if (!response.ok || !payload || !Array.isArray(payload.workers)) {
-          const detail = parseErrorDetail(payload);
-          throw new Error(detail ?? "Unable to load workers.");
-        }
-
-        setWorkers(payload.workers);
-      } catch (fetchError) {
-        if (fetchError instanceof TypeError) {
-          setError(`Unable to reach API at ${apiBase}.`);
-        } else if (fetchError instanceof Error) {
-          setError(fetchError.message);
-        } else {
-          setError("Unable to load workers.");
-        }
-      } finally {
-        setLoading(false);
-        setRefreshing(false);
-      }
-    },
-    [apiBase]
-  );
-
-  const fetchErrorLogs = useCallback(async () => {
+  const loadHistory = useEffectEvent(async (signal: AbortSignal) => {
     try {
-      const response = await fetch(`${apiBase}/api/v1/control-panel/error-log`, {
+      const response = await fetch("/api/logs?limit=100", {
         cache: "no-store",
+        signal,
       });
-      const payload = await parseJsonSafely<WorkerErrorLogResponse>(response);
+      const payload = await parseResponse(response);
       if (!response.ok || !payload || !Array.isArray(payload.logs)) {
-        return;
+        throw new Error(payload?.detail ?? "Unable to load application logs.");
       }
-      setLogs(payload.logs);
-    } catch {
-      setLogs([]);
+      appendEvents(payload.logs);
+      setError(null);
+    } catch (fetchError) {
+      if (fetchError instanceof DOMException && fetchError.name === "AbortError") return;
+      setError(
+        fetchError instanceof Error
+          ? fetchError.message
+          : "Unable to load application logs."
+      );
+    } finally {
+      setIsLoading(false);
     }
-  }, [apiBase]);
+  });
 
   useEffect(() => {
-    void fetchWorkers();
-    void fetchErrorLogs();
+    const controller = new AbortController();
+    let eventSource: EventSource | null = null;
 
-    const timer = window.setInterval(() => {
-      void fetchWorkers(true);
-    }, 5000);
+    const connect = async () => {
+      await loadHistory(controller.signal);
+      if (controller.signal.aborted) return;
+
+      const streamUrl = new URL("/api/logs/stream", window.location.origin);
+      if (lastEventId.current) {
+        streamUrl.searchParams.set("last_event_id", lastEventId.current);
+      }
+      eventSource = new EventSource(streamUrl);
+      eventSource.addEventListener("open", () => setStreamStatus("Live"));
+      eventSource.addEventListener("log", (message) => {
+        try {
+          appendEvents([JSON.parse(message.data) as LogEvent]);
+        } catch {
+          setError("Received an invalid log event.");
+        }
+      });
+      eventSource.addEventListener("error", () => setStreamStatus("Reconnecting"));
+    };
+
+    void connect();
 
     return () => {
-      window.clearInterval(timer);
+      controller.abort();
+      eventSource?.close();
     };
-  }, [fetchWorkers, fetchErrorLogs]);
+  }, []);
 
-  const setWorkerBusy = (workerKey: string, isBusy: boolean) => {
-    setBusyWorkers((previous) => ({
-      ...previous,
-      [workerKey]: isBusy,
-    }));
-  };
-
-  const toggleWorker = async (worker: WorkerStatus) => {
-    const nextAction = worker.running ? "stop" : "start";
-    setError(null);
-    setFeedback(null);
-    setWorkerBusy(worker.key, true);
-
-    try {
-      const response = await fetch(
-        `${apiBase}/api/v1/control-panel/workers/${worker.key}/${nextAction}`,
-        {
-          method: "POST",
-        }
-      );
-      const payload = await parseJsonSafely<WorkerActionResponse>(response);
-
-      if (!response.ok || !payload || !payload.worker) {
-        const detail = parseErrorDetail(payload);
-        throw new Error(detail ?? `Unable to ${nextAction} worker.`);
-      }
-
-      setWorkers((previous) =>
-        previous.map((current) =>
-          current.key === payload.worker.key ? payload.worker : current
-        )
-      );
-      setFeedback(payload.message);
-      void fetchWorkers(true);
-    } catch (actionError) {
-      if (actionError instanceof Error) {
-        setError(actionError.message);
-      } else {
-        setError(`Unable to ${nextAction} worker.`);
-      }
-    } finally {
-      setWorkerBusy(worker.key, false);
-    }
-  };
+  const filteredLogs = logs.filter(
+    (event) =>
+      (levelFilter === "ALL" || event.level === levelFilter) &&
+      (serviceFilter === "ALL" || event.service === serviceFilter)
+  );
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-8">
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
       <section className="neon-panel rounded-3xl p-6 sm:p-8">
-        <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.3em] text-soft">
               Operations
             </p>
             <h1 className="font-display text-3xl font-semibold sm:text-4xl">
-              Worker Control Panel
+              Application Logs
             </h1>
             <p className="mt-2 max-w-3xl text-sm text-muted sm:text-base">
-              FastAPI and frontend are expected to auto-start. Use this panel to
-              turn ARQ workers on and off.
+              Recent backend and worker events, updated in real time from Redis Streams.
             </p>
           </div>
-          <button
-            className="neon-button neon-button-ghost"
-            disabled={refreshing}
-            onClick={() => {
-              void fetchWorkers();
-              void fetchErrorLogs();
-            }}
-            type="button"
-          >
-            {refreshing ? "Refreshing..." : "Refresh"}
-          </button>
+          <span className={`neon-pill ${streamStatus === "Live" ? "" : "opacity-70"}`}>
+            {streamStatus}
+          </span>
         </div>
 
-        {feedback ? <p className="alert alert-success mt-4">{feedback}</p> : null}
+        <div className="mt-6 grid gap-4 sm:grid-cols-2">
+          <label className="text-sm font-semibold text-high">
+            Level
+            <select
+              className="surface-subtle mt-2 w-full rounded-xl border border-[var(--stroke-soft)] px-3 py-2 text-sm text-high"
+              onChange={(event) => setLevelFilter(event.target.value as LogLevel | "ALL")}
+              value={levelFilter}
+            >
+              {levelOptions.map((level) => (
+                <option key={level} value={level}>
+                  {level === "ALL" ? "All levels" : level}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="text-sm font-semibold text-high">
+            Service
+            <select
+              className="surface-subtle mt-2 w-full rounded-xl border border-[var(--stroke-soft)] px-3 py-2 text-sm text-high"
+              onChange={(event) => setServiceFilter(event.target.value)}
+              value={serviceFilter}
+            >
+              {serviceOptions.map((service) => (
+                <option key={service} value={service}>
+                  {service === "ALL" ? "All services" : formatService(service)}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
 
-        {error ? <p className="alert alert-error mt-4">{error}</p> : null}
+        {error ? <p className="alert alert-error mt-5">{error}</p> : null}
       </section>
 
-      <section className="grid gap-6 lg:grid-cols-[1.3fr_0.7fr]">
-        <div className="neon-card rounded-3xl p-6 sm:p-7">
-          <div className="flex items-center justify-between">
-            <h2 className="font-display text-2xl font-semibold">Workers</h2>
-            <span className="text-xs font-semibold uppercase tracking-[0.25em] text-soft">
-              {workers.length} total
-            </span>
-          </div>
-
-          {loading ? (
-            <p className="mt-5 text-sm text-muted">Loading worker statuses...</p>
-          ) : (
-            <div className="mt-5 space-y-4">
-              {workers.map((worker) => {
-                const isBusy = Boolean(busyWorkers[worker.key]);
-                return (
-                  <article className="surface-subtle rounded-2xl p-4" key={worker.key}>
-                    <div className="flex flex-wrap items-center justify-between gap-4">
-                      <div>
-                        <p className="text-base font-semibold">{worker.name}</p>
-                        <p className="mt-1 text-xs text-muted">
-                          {worker.settings_path}
-                        </p>
-                        <p className="mt-2 text-xs text-soft">
-                          PID: {worker.pid ?? "N/A"} | Started: {formatStartedAt(worker.started_at)}
-                        </p>
-                      </div>
-
-                      <div className="flex items-center gap-3">
-                        <span
-                          className={`text-sm font-semibold ${
-                            worker.running
-                              ? "text-status-success"
-                              : "text-status-neutral"
-                          }`}
-                        >
-                          {worker.running ? "ON" : "OFF"}
-                        </span>
-                        <button
-                          aria-checked={worker.running}
-                          aria-label={`${worker.running ? "Stop" : "Start"} ${worker.name}`}
-                          className={`toggle-switch relative inline-flex h-8 w-16 items-center rounded-full transition ${
-                            isBusy ? "cursor-not-allowed opacity-60" : ""
-                          }`}
-                          data-on={worker.running}
-                          disabled={isBusy}
-                          onClick={() => {
-                            void toggleWorker(worker);
-                          }}
-                          role="switch"
-                          type="button"
-                        >
-                          <span
-                            className={`toggle-thumb inline-block h-6 w-6 transform rounded-full transition-transform ${
-                              worker.running ? "translate-x-8" : "translate-x-1"
-                            }`}
-                          />
-                        </button>
-                      </div>
-                    </div>
-                  </article>
-                );
-              })}
-            </div>
-          )}
+      <section className="neon-card overflow-hidden rounded-3xl">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--stroke-soft)] px-6 py-4 sm:px-7">
+          <h2 className="font-display text-2xl font-semibold">Events</h2>
+          <span className="text-xs font-semibold uppercase tracking-[0.2em] text-soft">
+            {filteredLogs.length} shown
+          </span>
         </div>
 
-        <div className="neon-card rounded-3xl p-6 sm:p-7">
-          <h2 className="font-display text-2xl font-semibold">Error Log</h2>
-          <p className="mt-2 text-sm text-muted">
-            Placeholder panel. Log ingestion will be added later.
-          </p>
-
-          <div className="surface-subtle mt-5 rounded-2xl p-4">
-            {logs.length > 0 ? (
-              <pre className="max-h-80 overflow-auto whitespace-pre-wrap text-xs text-status-error">
-                {logs.join("\n")}
-              </pre>
-            ) : (
-              <p className="text-sm text-soft">No error logs yet.</p>
-            )}
+        {isLoading ? (
+          <p className="p-6 text-sm text-muted sm:p-7">Loading application logs...</p>
+        ) : filteredLogs.length === 0 ? (
+          <p className="p-6 text-sm text-soft sm:p-7">No matching log events yet.</p>
+        ) : (
+          <div className="divide-y divide-[var(--stroke-soft)]">
+            {filteredLogs.map((event) => (
+              <article className="px-6 py-4 sm:px-7" key={event.id}>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-semibold uppercase tracking-[0.14em]">
+                  <span className="text-soft">{formatTimestamp(event.timestamp)}</span>
+                  <span className={levelClassName(event.level)}>{event.level}</span>
+                  <span className="text-muted">{formatService(event.service)}</span>
+                  {event.video_id ? <span className="text-soft">Video {event.video_id}</span> : null}
+                  {event.job_id ? <span className="text-soft">Job {event.job_id}</span> : null}
+                </div>
+                <p className="mt-2 whitespace-pre-wrap text-sm text-high">{event.message}</p>
+                {event.exception ? (
+                  <details className="surface-subtle mt-3 rounded-xl p-3 text-xs text-status-error">
+                    <summary className="cursor-pointer font-semibold">Show exception details</summary>
+                    <pre className="mt-3 max-h-80 overflow-auto whitespace-pre-wrap font-mono text-xs">
+                      {event.exception}
+                    </pre>
+                  </details>
+                ) : null}
+              </article>
+            ))}
           </div>
-        </div>
+        )}
       </section>
     </div>
   );

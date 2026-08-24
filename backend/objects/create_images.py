@@ -48,7 +48,10 @@ class BaseImageCreator:
         sketch_folder: str | Path | None = None,
     ) -> None:
         self.env_path = Path(env_path).resolve()
-        self.logger = get_logger("instagram_post_creator.create_images")
+        self.logger = get_logger(
+            name="instagram_post_creator.create_images",
+            service="post_worker",
+        )
         self._env_values = _load_env_file(self.env_path)
         output_value = (
             str(output_folder)

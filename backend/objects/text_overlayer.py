@@ -16,7 +16,10 @@ class TextOverlayer:
     _SUPPORTED_PRESETS = {"top", "center", "bottom", "custom"}
 
     def __init__(self) -> None:
-        self.logger = get_logger(name="instagram_reel_creation_text_overlayer")
+        self.logger = get_logger(
+            name="instagram_reel_creation_text_overlayer",
+            service="text_overlay",
+        )
 
     def apply_text_overlays(
         self,

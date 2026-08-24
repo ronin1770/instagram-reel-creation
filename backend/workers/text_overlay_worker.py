@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from datetime import datetime
 from pathlib import Path
@@ -59,7 +60,13 @@ def _extract_overlays(video_text_doc: Dict[str, Any]) -> list[Dict[str, Any]]:
 
 
 async def process_text_overlay_job(ctx: Dict[str, Any], video_id: str) -> bool:
-    logger = get_logger(name="instagram_reel_creation_text_overlay_arq")
+    logger = logging.LoggerAdapter(
+        get_logger(
+            name="instagram_reel_creation_text_overlay_arq",
+            service="text_overlay",
+        ),
+        {"video_id": video_id},
+    )
     db = get_db()
     job_collection = _job_collection()
 

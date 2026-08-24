@@ -35,6 +35,7 @@ This document summarizes the backend implementation for the Instagram Reel creat
 - `MONGODB_URI` – MongoDB connection string.
 - `REDIS_URL` – Redis connection string.
 - `LOG_LOCATION` – log file path for the backend logger.
+- `LOG_API_KEY` – secret required by `/api/logs` and `/api/logs/stream` through the `X-Log-API-Key` header.
 - `UPLOAD_FILES_LOCATION` – filesystem path where uploads are stored (used by `/uploads`).
 - `OUTPUT_FILES_LOCATION` – filesystem path for final output files.
 - `INPUT_FILES_LOCATION` – base input directory used by `VideoAutomation`.
@@ -61,7 +62,7 @@ Note: `sample.env` currently uses `VIDEO_LOCATION`, but the code expects `INPUT_
 Additional libraries are used indirectly or imported directly:
 - `pydantic` (FastAPI dependency)
 - `typing-extensions` (imported in `video_part_model.py`)
-- `redis` (ARQ dependency)
+- `redis` (Redis Streams transport for structured application logs)
 
 If you want explicit, stable installs, consider adding `pydantic` and `typing-extensions` to `requirements.txt`.
 
